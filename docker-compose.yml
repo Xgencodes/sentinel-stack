@@ -1,0 +1,85 @@
+# Reference deployment for the Sentinel stack.
+#
+#   docker compose up
+#
+# Two services by default: one composed server (ehr-bridge + the sentinel
+# registry/signals/model/delivery modules, all in one NestJS process) and one
+# Postgres. No accounts, no API keys, and no external services are required —
+# the inference backend defaults to a mock (zero model weights) and SMS
+# defaults to a mock adapter (zero telephony credentials).
+#
+# The credentials below are DEVELOPMENT DEFAULTS so a fresh clone runs with
+# zero configuration. Override every one of them before deploying anywhere
+# real — see .env.example.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+      POSTGRES_DB: sentinel_stack
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sentinel -d sentinel_stack']
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+
+  sentinel-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Named contexts, not a shared parent context — see Dockerfile's
+      # header comment for why. Requires docker compose v2.17+ / BuildKit.
+      additional_contexts:
+        ehr-bridge: ../ehr-bridge
+        ehr-bridge-sdk: ../ehr-bridge-sdk
+        sentinel: ../sentinel
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://sentinel:sentinel@postgres:5432/sentinel_stack
+      # Dev defaults. Generate real values with: openssl rand -hex 32
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-dev-admin-key-change-me}
+      ADMIN_SECRET_ENCRYPTION_KEY: ${ADMIN_SECRET_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      PATIENT_IDENTIFIER_SYSTEM: ${PATIENT_IDENTIFIER_SYSTEM:-urn:ehr-bridge:source-patient-id}
+      # mock | http — see sentinel/src/model/model.module.ts. "http" with
+      # the local-inference profile points at the Ollama container below.
+      INFERENCE_BACKEND: ${INFERENCE_BACKEND:-mock}
+      MODEL_API_URL: ${MODEL_API_URL:-}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      # Leave unset to use the mock SMS adapter (default, zero credentials).
+      AT_API_KEY: ${AT_API_KEY:-}
+      AT_USERNAME: ${AT_USERNAME:-sandbox}
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/health || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # Optional, fully-offline inference. Not wired into the default profile —
+  # bring it up explicitly with `docker compose --profile local-inference up`
+  # and set INFERENCE_BACKEND=http, MODEL_API_URL=http://ollama:11434/api/generate.
+  # This profile is documented but has not been exercised end-to-end; treat
+  # it as a starting point; see sentinel/src/model/inference/http-model.backend.ts
+  # for the expected request/response shape.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ['local-inference']
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - '${OLLAMA_PORT:-11434}:11434'
+
+volumes:
+  postgres-data:
+  ollama-data:

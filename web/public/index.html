@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sentinel — Reference Deployment</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0b0f14;
+      --panel: #121822;
+      --border: #24303e;
+      --text: #e6edf3;
+      --muted: #8b98a5;
+      --low: #2f9e44;
+      --medium: #e8a33d;
+      --high: #e8484f;
+      --accent: #4c9aff;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f5f7fa;
+        --panel: #ffffff;
+        --border: #dde3ea;
+        --text: #1a2733;
+        --muted: #5c6b7a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.1rem; margin: 0; }
+    header .subtitle { color: var(--muted); font-size: 0.85rem; }
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1rem;
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+    }
+    .panel h2 {
+      font-size: 0.95rem;
+      margin: 0 0 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel h2 button {
+      font-size: 0.75rem;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 0.2rem 0.5rem;
+      cursor: pointer;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .badge-low { background: var(--low); }
+    .badge-medium { background: var(--medium); }
+    .badge-high { background: var(--high); }
+    .badge-unknown { background: var(--muted); }
+    .health-row { display: flex; justify-content: space-between; padding: 0.35rem 0; font-size: 0.85rem; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 0.4rem; }
+    .dot-ok { background: var(--low); }
+    .dot-down { background: var(--high); }
+    .empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
+    .banner {
+      grid-column: 1 / -1;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 0.85rem 1.25rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    code { background: var(--border); padding: 0.1rem 0.3rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sentinel</h1>
+    <span class="subtitle">reference deployment — climate signal to care, in one process</span>
+  </header>
+
+  <main>
+    <div class="banner">
+      This is a skeleton MVP: the risk model is an unvalidated baseline trained on synthetic data,
+      and the inference backend is a zero-weight mock unless <code>INFERENCE_BACKEND=http</code> is
+      configured. See each repo's <code>ROADMAP.md</code> for what's funded work vs. shipped today.
+    </div>
+
+    <div class="panel">
+      <h2>System health <button onclick="refreshAll()">refresh</button></h2>
+      <div id="health"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Zones</h2>
+      <table>
+        <thead><tr><th>Zone</th><th>Risk band</th></tr></thead>
+        <tbody id="zones"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Facilities</h2>
+      <table>
+        <thead><tr><th>Facility</th><th>Beds</th><th>Risk band</th></tr></thead>
+        <tbody id="facilities"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Alert feed</h2>
+      <table>
+        <thead><tr><th>When</th><th>Band</th><th>Message</th></tr></thead>
+        <tbody id="alerts"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    async function safeJson(path) {
+      try {
+        const res = await fetch(path);
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }
+
+    function bandBadge(band) {
+      const b = (band || 'unknown').toLowerCase();
+      return `<span class="badge badge-${['low', 'medium', 'high'].includes(b) ? b : 'unknown'}">${b}</span>`;
+    }
+
+    async function refreshHealth() {
+      const el = document.getElementById('health');
+      const health = await safeJson('/health');
+      if (!health) {
+        el.innerHTML = `<div class="health-row"><span><span class="dot dot-down"></span>sentinel-stack</span><span>down</span></div>`;
+        return;
+      }
+      el.innerHTML = health.components
+        .map((c) => `<div class="health-row"><span><span class="dot dot-ok"></span>${c}</span><span>ok</span></div>`)
+        .join('');
+    }
+
+    async function refreshZones() {
+      const el = document.getElementById('zones');
+      const zones = await safeJson('/v1/registry/zones');
+      if (!zones || zones.length === 0) {
+        el.innerHTML = `<tr><td colspan="2" class="empty">No zones yet — run the demo scenario or create one via the API.</td></tr>`;
+        return;
+      }
+      const rows = await Promise.all(
+        zones.map(async (z) => {
+          const trigger = await safeJson(`/v1/zones/${z.id}/trigger`);
+          return `<tr><td>${z.name}</td><td>${bandBadge(trigger?.band)}</td></tr>`;
+        }),
+      );
+      el.innerHTML = rows.join('');
+    }
+
+    async function refreshFacilities() {
+      const el = document.getElementById('facilities');
+      const facilities = await safeJson('/v1/registry/facilities');
+      if (!facilities || facilities.length === 0) {
+        el.innerHTML = `<tr><td colspan="3" class="empty">No facilities yet.</td></tr>`;
+        return;
+      }
+      const rows = await Promise.all(
+        facilities.map(async (f) => {
+          const risk = await safeJson(`/v1/facilities/${f.id}/risk-score`);
+          return `<tr><td>${f.name}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${bandBadge(risk?.band)}</td></tr>`;
+        }),
+      );
+      el.innerHTML = rows.join('');
+    }
+
+    async function refreshAlerts() {
+      const el = document.getElementById('alerts');
+      const alerts = await safeJson('/v1/alerts?limit=10');
+      if (!alerts || alerts.length === 0) {
+        el.innerHTML = `<tr><td colspan="3" class="empty">No alerts yet.</td></tr>`;
+        return;
+      }
+      el.innerHTML = alerts
+        .map(
+          (a) =>
+            `<tr><td>${new Date(a.createdAt).toLocaleString()}</td><td>${bandBadge(a.band)}</td><td>${a.message}</td></tr>`,
+        )
+        .join('');
+    }
+
+    function refreshAll() {
+      refreshHealth();
+      refreshZones();
+      refreshFacilities();
+      refreshAlerts();
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 10000);
+  </script>
+</body>
+</html>
