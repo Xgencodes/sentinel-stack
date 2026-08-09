@@ -42,6 +42,28 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # Static dashboard needs no build step — mount it straight through so
+      # editing web/public/index.html takes effect on the next browser
+      # refresh, no rebuild/restart at all.
+      - ./web/public:/app/sentinel-stack/web/public:ro
+    develop:
+      # `docker compose watch` (not plain `up`) rebuilds this service
+      # automatically when TypeScript source in any of the four composed
+      # repos changes — everything here needs a real `tsc` pass (the image
+      # runs compiled dist/main.js), so `sync` alone can't apply these,
+      # only `rebuild`. Docker's layer cache keeps each rebuild fast.
+      watch:
+        - path: ./src
+          action: rebuild
+        - path: ./scripts
+          action: rebuild
+        - path: ../ehr-bridge/src
+          action: rebuild
+        - path: ../ehr-bridge-sdk/src
+          action: rebuild
+        - path: ../sentinel/src
+          action: rebuild
     environment:
       PORT: 3000
       DATABASE_URL: postgres://sentinel:sentinel@postgres:5432/sentinel_stack
@@ -49,6 +71,11 @@ services:
       ADMIN_API_KEY: ${ADMIN_API_KEY:-dev-admin-key-change-me}
       ADMIN_SECRET_ENCRYPTION_KEY: ${ADMIN_SECRET_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       PATIENT_IDENTIFIER_SYSTEM: ${PATIENT_IDENTIFIER_SYSTEM:-urn:ehr-bridge:source-patient-id}
+      # memory | log (default outside this compose file) — memory keeps
+      # events queryable via GET /v1/telemetry/timeline/:correlationId for
+      # the dashboard's timeline panel. A real deployment behind a log
+      # shipper should leave this unset to get LogTelemetryEmitter instead.
+      TELEMETRY_MODE: ${TELEMETRY_MODE:-memory}
       # mock | http — see sentinel/src/model/model.module.ts. "http" with
       # the local-inference profile points at the Ollama container below.
       INFERENCE_BACKEND: ${INFERENCE_BACKEND:-mock}

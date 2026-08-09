@@ -7,12 +7,19 @@ import { Logger } from '@nestjs/common';
 import { join } from 'path';
 import fastifyStatic from '@fastify/static';
 import { AppModule } from './app.module';
+import { CrossPackageExceptionFilter } from './common/cross-package-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
   );
+
+  // See CrossPackageExceptionFilter's own doc comment: without this,
+  // exceptions thrown inside ehr-bridge's or sentinel's own code degrade to
+  // a generic 500 once composed into this process, because each repo
+  // builds against its own separate @nestjs/common install.
+  app.useGlobalFilters(new CrossPackageExceptionFilter());
 
   // Registered directly on the underlying Fastify instance rather than via
   // @nestjs/serve-static, which targets Express by default — this avoids an

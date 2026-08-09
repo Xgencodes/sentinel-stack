@@ -6,151 +6,554 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #0b0f14;
-      --panel: #121822;
-      --border: #24303e;
-      --text: #e6edf3;
-      --muted: #8b98a5;
-      --low: #2f9e44;
-      --medium: #e8a33d;
-      --high: #e8484f;
-      --accent: #4c9aff;
+      color-scheme: light;
+      --page:        #f9f9f7;
+      --surface:     #fcfcfb;
+      --border:      #e1e0d9;
+      --ring:        rgba(11,11,11,0.10);
+      --text:        #0b0b0b;
+      --muted:       #52514e;
+      --faint:       #898781;
+      --accent:      #2a78d6;
+      --good:        #0ca30c;
+      --warning:     #fab219;
+      --critical:    #d03b3b;
+      --badge-ink:   #0b0b0b;
     }
-    @media (prefers-color-scheme: light) {
-      :root {
-        --bg: #f5f7fa;
-        --panel: #ffffff;
-        --border: #dde3ea;
-        --text: #1a2733;
-        --muted: #5c6b7a;
+    @media (prefers-color-scheme: dark) {
+      :root:where(:not([data-theme="light"])) {
+        color-scheme: dark;
+        --page:      #0d0d0d;
+        --surface:   #1a1a19;
+        --border:    #2c2c2a;
+        --ring:      rgba(255,255,255,0.10);
+        --text:      #ffffff;
+        --muted:     #c3c2b7;
+        --faint:     #898781;
+        --accent:    #3987e5;
+        --good:      #0ca30c;
+        --warning:   #fab219;
+        --critical:  #e66767;
+        --badge-ink: #0b0b0b;
       }
     }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --page:      #0d0d0d;
+      --surface:   #1a1a19;
+      --border:    #2c2c2a;
+      --ring:      rgba(255,255,255,0.10);
+      --text:      #ffffff;
+      --muted:     #c3c2b7;
+      --faint:     #898781;
+      --accent:    #3987e5;
+      --good:      #0ca30c;
+      --warning:   #fab219;
+      --critical:  #e66767;
+      --badge-ink: #0b0b0b;
+    }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--page);
       color: var(--text);
     }
+
     header {
-      padding: 1.25rem 1.5rem;
+      padding: 1.1rem 1.5rem;
       border-bottom: 1px solid var(--border);
       display: flex;
-      align-items: baseline;
+      align-items: center;
       gap: 0.75rem;
       flex-wrap: wrap;
     }
-    header h1 { font-size: 1.1rem; margin: 0; }
+    header h1 { font-size: 1.15rem; margin: 0; letter-spacing: -0.01em; }
     header .subtitle { color: var(--muted); font-size: 0.85rem; }
+    .run-status { font-size: 0.8rem; color: var(--muted); }
+    .run-button {
+      margin-left: auto;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0.55rem 1.1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .run-button:hover { filter: brightness(1.08); }
+    .run-button:disabled { opacity: 0.4; cursor: default; filter: none; }
+
+    .stage-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .stage-btn {
+      margin-left: 0;
+      padding: 0.45rem 0.8rem;
+      font-size: 0.78rem;
+    }
+    .reset-btn {
+      margin-left: auto;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .reset-btn:hover { filter: none; border-color: var(--critical); color: var(--critical); }
+    .clear-btn { background: transparent; color: var(--critical); border: 1px solid var(--critical); }
+    .clear-btn:hover { filter: none; background: var(--critical); color: #fff; }
+
+    .spinner {
+      display: inline-block;
+      width: 0.85em;
+      height: 0.85em;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .progress-track {
+      height: 4px;
+      border-radius: 999px;
+      background: var(--border);
+      overflow: hidden;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .progress-track.active { display: block; }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--accent);
+      transition: width 0.25s ease, background 0.25s ease;
+    }
+
+    @keyframes stage-pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+    .stage-card.loading {
+      opacity: 1;
+      border-color: var(--accent);
+      animation: stage-pulse 1.1s ease-in-out infinite;
+    }
+
     main {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1rem;
-      padding: 1.5rem;
       max-width: 1400px;
       margin: 0 auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .banner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 0.7rem 1.1rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    /* Stat tiles */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.85rem;
+    }
+    .stat-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem 1.1rem;
+    }
+    .stat-label {
+      font-size: 0.72rem;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.3rem;
+    }
+    .stat-value {
+      font-size: 1.6rem;
+      font-weight: 650;
+      line-height: 1.1;
+      font-variant-numeric: proportional-nums;
+    }
+    .stat-sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+
+    /* Panel grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1rem;
     }
     .panel {
-      background: var(--panel);
+      background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 1rem 1.25rem;
       overflow-x: auto;
     }
     .panel h2 {
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       margin: 0 0 0.75rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 0.5rem;
     }
     .panel h2 button {
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       background: none;
       border: 1px solid var(--border);
       color: var(--muted);
       border-radius: 6px;
-      padding: 0.2rem 0.5rem;
+      padding: 0.2rem 0.55rem;
       cursor: pointer;
     }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 0.4rem 0.3rem; border-bottom: 1px solid var(--border); }
-    th { color: var(--muted); font-weight: 500; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: left; padding: 0.45rem 0.4rem; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+    th { color: var(--faint); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    tr:last-child td { border-bottom: none; }
+
     .badge {
       display: inline-block;
-      padding: 0.15rem 0.5rem;
+      padding: 0.15rem 0.55rem;
       border-radius: 999px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 650;
+      color: var(--badge-ink);
     }
-    .badge-low { background: var(--low); }
-    .badge-medium { background: var(--medium); }
-    .badge-high { background: var(--high); }
-    .badge-unknown { background: var(--muted); }
+    .badge-low      { background: var(--good); }
+    .badge-medium   { background: var(--warning); }
+    .badge-high     { background: var(--critical); color: #fff; }
+    .badge-unknown  { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
     .health-row { display: flex; justify-content: space-between; padding: 0.35rem 0; font-size: 0.85rem; }
-    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 0.4rem; }
-    .dot-ok { background: var(--low); }
-    .dot-down { background: var(--high); }
-    .empty { color: var(--muted); font-size: 0.85rem; padding: 0.5rem 0; }
-    .banner {
-      grid-column: 1 / -1;
-      background: var(--panel);
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 0.5rem; }
+    .dot-ok   { background: var(--good); }
+    .dot-down { background: var(--critical); }
+
+    .empty { color: var(--faint); font-size: 0.82rem; padding: 0.6rem 0; }
+
+    .map-legend { display: flex; gap: 0.9rem; font-size: 0.72rem; color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+    .legend-dot { width: 9px; height: 9px; display: inline-block; }
+    .legend-zone { border-radius: 50%; background: var(--accent); }
+    .legend-facility { background: var(--muted); }
+
+    #map-svg {
+      width: 100%;
+      height: 320px;
+      background: var(--page);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .map-dot { cursor: pointer; }
+    .map-dot:hover { opacity: 0.75; }
+    .map-label {
+      font-size: 9px;
+      fill: var(--muted);
+      pointer-events: none;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    .map-empty {
+      fill: var(--faint);
+      font-size: 12px;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    #toast-root {
+      position: fixed;
+      bottom: 1.25rem;
+      right: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      z-index: 200;
+    }
+    .toast {
+      background: var(--surface);
       border: 1px solid var(--border);
       border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      font-size: 0.82rem;
+      max-width: 340px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      animation: toast-in 0.2s ease;
+    }
+    .toast-error { border-left-color: var(--critical); }
+    .toast-success { border-left-color: var(--good); }
+    .toast.leaving { animation: toast-out 0.2s ease forwards; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes toast-out { to { opacity: 0; transform: translateY(6px); } }
+
+    /* Scenario stage dashboard */
+    .wide { grid-column: 1 / -1; }
+    .stage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 0.85rem;
+    }
+    .stage-card {
+      position: relative;
+      border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 0.85rem 1.25rem;
+      padding: 0.85rem 1rem;
+      background: var(--page);
+      transition: opacity 0.15s ease;
+    }
+    .stage-card.pending { opacity: 0.55; }
+    .stage-head {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.4rem;
+    }
+    .stage-num {
+      width: 1.3rem;
+      height: 1.3rem;
+      border-radius: 999px;
+      background: var(--border);
+      color: var(--muted);
+      font-size: 0.65rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .stage-card.done .stage-num { background: var(--accent); color: #fff; }
+    .stage-label {
+      font-size: 0.72rem;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .stage-value {
+      font-size: 1.15rem;
+      font-weight: 650;
+      line-height: 1.25;
+      margin-bottom: 0.25rem;
+    }
+    .stage-sub { font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
+    .stage-sub b { color: var(--text); font-weight: 620; }
+    .stage-detail { margin-top: 0.45rem; }
+    .stage-detail summary {
+      font-size: 0.7rem;
+      color: var(--faint);
+      cursor: pointer;
+      user-select: none;
+    }
+    .stage-detail pre {
+      margin: 0.4rem 0 0;
+      font-size: 0.72rem;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.65rem;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .error-box {
+      color: var(--critical);
       font-size: 0.85rem;
+      padding: 0.5rem 0;
+    }
+
+    code { background: var(--border); padding: 0.1rem 0.3rem; border-radius: 4px; }
+
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover td { background: var(--border); }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(11,11,11,0.5);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 4vh 1rem;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 640px;
+      width: 100%;
+      padding: 1.25rem 1.5rem 1.5rem;
+    }
+    .modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.9rem;
+    }
+    .modal-title { font-size: 1.05rem; font-weight: 650; }
+    .modal-back {
+      font-size: 0.78rem;
+      color: var(--accent);
+      cursor: pointer;
+      margin-bottom: 0.5rem;
+      display: inline-block;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.1rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .detail-section { margin-bottom: 1.1rem; }
+    .detail-section:last-child { margin-bottom: 0; }
+    .detail-section h3 {
+      font-size: 0.72rem;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin: 0 0 0.5rem;
+    }
+    .kv-row { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+    .kv-row:last-child { border-bottom: none; }
+    .kv-row span:first-child { color: var(--muted); }
+    .kv-row span:last-child { font-weight: 550; text-align: right; }
+    .status-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.82rem;
+      line-height: 1.55;
+    }
+    .cohort-tags { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.3rem; }
+    .tag {
+      font-size: 0.7rem;
+      padding: 0.1rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
       color: var(--muted);
     }
-    code { background: var(--border); padding: 0.1rem 0.3rem; border-radius: 4px; }
   </style>
 </head>
 <body>
   <header>
     <h1>Sentinel</h1>
     <span class="subtitle">reference deployment — climate signal to care, in one process</span>
+    <span class="run-status" id="run-status"></span>
   </header>
 
   <main>
-    <div class="banner">
-      This is a skeleton MVP: the risk model is an unvalidated baseline trained on synthetic data,
-      and the inference backend is a zero-weight mock unless <code>INFERENCE_BACKEND=http</code> is
-      configured. See each repo's <code>ROADMAP.md</code> for what's funded work vs. shipped today.
-    </div>
+
+    <div class="stat-row" id="stat-row"></div>
 
     <div class="panel">
-      <h2>System health <button onclick="refreshAll()">refresh</button></h2>
-      <div id="health"></div>
+      <h2>
+        Map
+        <span class="map-legend">
+          <span class="legend-item"><span class="legend-dot legend-zone"></span>zone</span>
+          <span class="legend-item"><span class="legend-dot legend-facility"></span>facility</span>
+        </span>
+      </h2>
+      <svg id="map-svg" viewBox="0 0 640 380" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
 
-    <div class="panel">
-      <h2>Zones</h2>
-      <table>
-        <thead><tr><th>Zone</th><th>Risk band</th></tr></thead>
-        <tbody id="zones"></tbody>
-      </table>
+    <div class="grid">
+      <div class="panel">
+        <h2>System health <button onclick="refreshAll()">refresh</button></h2>
+        <div id="health"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Zones</h2>
+        <table>
+          <thead><tr><th>Zone</th><th>Location (lat, lng)</th><th>Risk band</th></tr></thead>
+          <tbody id="zones"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Facilities</h2>
+        <table>
+          <thead><tr><th>Facility</th><th>Location</th><th>Beds</th><th>Specialties</th><th>Risk band</th></tr></thead>
+          <tbody id="facilities"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Alert feed</h2>
+        <table>
+          <thead><tr><th>When</th><th>Band</th><th>Message</th></tr></thead>
+          <tbody id="alerts"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Messages sent</h2>
+        <table>
+          <thead><tr><th>Recipient</th><th>Channel</th><th>Template</th><th>Status</th></tr></thead>
+          <tbody id="messages"></tbody>
+        </table>
+      </div>
     </div>
 
-    <div class="panel">
-      <h2>Facilities</h2>
-      <table>
-        <thead><tr><th>Facility</th><th>Beds</th><th>Risk band</th></tr></thead>
-        <tbody id="facilities"></tbody>
-      </table>
-    </div>
-
-    <div class="panel">
-      <h2>Alert feed</h2>
-      <table>
-        <thead><tr><th>When</th><th>Band</th><th>Message</th></tr></thead>
-        <tbody id="alerts"></tbody>
-      </table>
+    <div class="panel wide">
+      <h2>
+        Scenario dashboard
+        <span class="run-status" id="scenario-correlation"></span>
+        <button class="run-button" style="margin-left:0.5rem; padding:0.25rem 0.6rem; font-size:0.72rem;" onclick="openTelemetryTimeline()">View timeline</button>
+      </h2>
+      <div class="stage-controls" id="stage-controls">
+        <button class="run-button" id="run-full-button" onclick="runFullDemo()">▶ Run full demo</button>
+        <button class="run-button stage-btn" onclick="runStage('registry')">1. Seed registry</button>
+        <button class="run-button stage-btn" onclick="runStage('alert')" disabled>2. Trigger climate alert</button>
+        <button class="run-button stage-btn" onclick="runStage('campaign')" disabled>3. Dispatch campaign</button>
+        <button class="run-button stage-btn" onclick="runStage('triage')" disabled>4. Run triage</button>
+        <button class="run-button stage-btn" onclick="runStage('placement')" disabled>5. Place patient</button>
+        <button class="run-button stage-btn reset-btn" onclick="resetDemo()">Reset</button>
+        <button class="run-button clear-btn" onclick="clearAllData()">Clear all data</button>
+      </div>
+      <div class="progress-track" id="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+      <div class="stage-grid" id="scenario-grid"></div>
     </div>
   </main>
 
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
   <script>
+    function showToast(message, type) {
+      const root = document.getElementById('toast-root');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type === 'error' ? 'toast-error' : type === 'success' ? 'toast-success' : ''}`;
+      toast.textContent = message;
+      root.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add('leaving');
+        setTimeout(() => toast.remove(), 200);
+      }, 4500);
+    }
+
     async function safeJson(path) {
       try {
         const res = await fetch(path);
@@ -166,6 +569,47 @@
       return `<span class="badge badge-${['low', 'medium', 'high'].includes(b) ? b : 'unknown'}">${b}</span>`;
     }
 
+    function bandRank(band) {
+      return { high: 3, medium: 2, low: 1 }[(band || '').toLowerCase()] || 0;
+    }
+
+    let latestState = { zones: [], facilities: [], alerts: [], messages: [], patients: [], chws: [] };
+
+    function renderStats() {
+      const el = document.getElementById('stat-row');
+      const zones = latestState.zones || [];
+      const facilities = latestState.facilities || [];
+      const alerts = latestState.alerts || [];
+      const messages = latestState.messages || [];
+
+      const worstBand = zones
+        .map((z) => z.__band)
+        .reduce((worst, b) => (bandRank(b) > bandRank(worst) ? b : worst), null);
+
+      const bedsAvailable = facilities.reduce((sum, f) => sum + (f.bedsAvailable || 0), 0);
+      const bedsTotal = facilities.reduce((sum, f) => sum + (f.bedsTotal || 0), 0);
+      const sent = messages.filter((m) => m.status === 'sent').length;
+      const failed = messages.filter((m) => m.status === 'failed').length;
+
+      const tiles = [
+        { label: 'Zones monitored', value: zones.length, sub: worstBand ? `highest: ${worstBand}` : 'no signals yet' },
+        { label: 'Facilities', value: facilities.length, sub: `${bedsAvailable}/${bedsTotal} beds available` },
+        { label: 'Active alerts', value: alerts.length, sub: 'most recent 10' },
+        { label: 'Messages sent', value: sent, sub: failed ? `${failed} failed` : 'mock adapter' },
+      ];
+
+      el.innerHTML = tiles
+        .map(
+          (t) => `
+        <div class="stat-tile">
+          <div class="stat-label">${t.label}</div>
+          <div class="stat-value">${t.value}</div>
+          <div class="stat-sub">${t.sub}</div>
+        </div>`,
+        )
+        .join('');
+    }
+
     async function refreshHealth() {
       const el = document.getElementById('health');
       const health = await safeJson('/health');
@@ -178,61 +622,948 @@
         .join('');
     }
 
+    // The System A <-> System B ehr-bridge connection is established lazily,
+    // on the first "Transfer record" click — this makes that otherwise
+    // invisible server-side handshake visible as a real status row.
+    async function refreshConnectionStatus() {
+      const el = document.getElementById('health');
+      if (!el) return;
+      const status = await safeJson('/v1/demo/connection-status');
+      const active = status?.active;
+      el.insertAdjacentHTML(
+        'beforeend',
+        `<div class="health-row"><span><span class="dot ${active ? 'dot-ok' : 'dot-down'}"></span>ehr-bridge connection</span><span>${active ? 'active' : 'not yet established'}</span></div>`,
+      );
+    }
+
     async function refreshZones() {
       const el = document.getElementById('zones');
       const zones = await safeJson('/v1/registry/zones');
       if (!zones || zones.length === 0) {
-        el.innerHTML = `<tr><td colspan="2" class="empty">No zones yet — run the demo scenario or create one via the API.</td></tr>`;
+        el.innerHTML = `<tr><td colspan="3" class="empty">No zones yet — run the demo scenario or create one via the API.</td></tr>`;
+        latestState.zones = [];
+        renderStats();
         return;
       }
-      const rows = await Promise.all(
+      const withBand = await Promise.all(
         zones.map(async (z) => {
           const trigger = await safeJson(`/v1/zones/${z.id}/trigger`);
-          return `<tr><td>${z.name}</td><td>${bandBadge(trigger?.band)}</td></tr>`;
+          return { ...z, __band: trigger?.band };
         }),
       );
-      el.innerHTML = rows.join('');
+      latestState.zones = withBand;
+      el.innerHTML = withBand
+        .map((z) => {
+          const loc = `${z.centroidLat?.toFixed(3)}, ${z.centroidLng?.toFixed(3)}`;
+          return `<tr class="clickable" onclick="openZoneDetail('${z.id}')"><td>${z.name}</td><td>${loc}</td><td>${bandBadge(z.__band)}</td></tr>`;
+        })
+        .join('');
+      renderStats();
     }
 
     async function refreshFacilities() {
       const el = document.getElementById('facilities');
       const facilities = await safeJson('/v1/registry/facilities');
       if (!facilities || facilities.length === 0) {
-        el.innerHTML = `<tr><td colspan="3" class="empty">No facilities yet.</td></tr>`;
+        el.innerHTML = `<tr><td colspan="5" class="empty">No facilities yet.</td></tr>`;
+        latestState.facilities = [];
+        renderStats();
         return;
       }
+      latestState.facilities = facilities;
       const rows = await Promise.all(
         facilities.map(async (f) => {
           const risk = await safeJson(`/v1/facilities/${f.id}/risk-score`);
-          return `<tr><td>${f.name}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${bandBadge(risk?.band)}</td></tr>`;
+          const loc = `${f.lat?.toFixed(3)}, ${f.lng?.toFixed(3)}`;
+          const specialties = (f.specialties || []).map((s) => s.code || s).join(', ') || '—';
+          return `<tr><td>${f.name}</td><td>${loc}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${specialties}</td><td>${bandBadge(risk?.band)}</td></tr>`;
         }),
       );
       el.innerHTML = rows.join('');
+      renderStats();
     }
 
     async function refreshAlerts() {
       const el = document.getElementById('alerts');
       const alerts = await safeJson('/v1/alerts?limit=10');
+      latestState.alerts = alerts || [];
       if (!alerts || alerts.length === 0) {
         el.innerHTML = `<tr><td colspan="3" class="empty">No alerts yet.</td></tr>`;
+        renderStats();
         return;
       }
       el.innerHTML = alerts
-        .map(
-          (a) =>
-            `<tr><td>${new Date(a.createdAt).toLocaleString()}</td><td>${bandBadge(a.band)}</td><td>${a.message}</td></tr>`,
-        )
+        .map((a) => {
+          const clickable = a.zoneId ? `class="clickable" onclick="openZoneDetail('${a.zoneId}')"` : '';
+          return `<tr ${clickable}><td>${new Date(a.createdAt).toLocaleString()}</td><td>${bandBadge(a.band)}</td><td>${a.message}</td></tr>`;
+        })
         .join('');
+      renderStats();
     }
 
-    function refreshAll() {
-      refreshHealth();
-      refreshZones();
-      refreshFacilities();
-      refreshAlerts();
+    let lastCampaignId = null;
+
+    async function refreshMessages() {
+      const el = document.getElementById('messages');
+      if (!lastCampaignId) {
+        el.innerHTML = `<tr><td colspan="4" class="empty">No campaign dispatched yet — run the demo scenario.</td></tr>`;
+        latestState.messages = [];
+        renderStats();
+        return;
+      }
+      const messages = await safeJson(`/v1/campaigns/${lastCampaignId}/messages`);
+      latestState.messages = messages || [];
+      if (!messages || messages.length === 0) {
+        el.innerHTML = `<tr><td colspan="4" class="empty">No messages for the last campaign.</td></tr>`;
+        renderStats();
+        return;
+      }
+      el.innerHTML = messages
+        .map((m) => {
+          const recipient = m.patient
+            ? `${m.patient.msisdn} (patient)`
+            : m.chw
+              ? `${m.chw.name} (CHW)`
+              : '—';
+          return `<tr><td>${recipient}</td><td>${m.channel}</td><td>${m.templateId}</td><td>${m.status}</td></tr>`;
+        })
+        .join('');
+      renderStats();
     }
 
-    refreshAll();
+    async function refreshPatients() {
+      latestState.patients = (await safeJson('/v1/registry/patients')) || [];
+    }
+
+    async function refreshProviders() {
+      latestState.chws = (await safeJson('/v1/registry/providers?role=chw')) || [];
+    }
+
+    async function refreshAll() {
+      await Promise.all([
+        refreshHealth(),
+        refreshZones(),
+        refreshFacilities(),
+        refreshAlerts(),
+        refreshMessages(),
+        refreshPatients(),
+        refreshProviders(),
+      ]);
+      renderMap();
+      refreshConnectionStatus();
+    }
+
+    function bandColor(band) {
+      const styles = getComputedStyle(document.documentElement);
+      const b = (band || '').toLowerCase();
+      if (b === 'low') return styles.getPropertyValue('--good').trim();
+      if (b === 'medium') return styles.getPropertyValue('--warning').trim();
+      if (b === 'high') return styles.getPropertyValue('--critical').trim();
+      return styles.getPropertyValue('--faint').trim();
+    }
+
+    // Plain SVG scatter plot — zones as circles (colored by risk band),
+    // facilities as squares — positioned by lat/lng normalized into the
+    // viewBox. No map tiles/library: this is a relative-position sketch of
+    // the catchment, not a georeferenced map, which is enough to show
+    // spatial relationships on camera without a mapping-service dependency.
+    function renderMap() {
+      const svg = document.getElementById('map-svg');
+      const zones = latestState.zones || [];
+      const facilities = latestState.facilities || [];
+      const width = 640;
+      const height = 380;
+
+      const points = [
+        ...zones
+          .filter((z) => typeof z.centroidLat === 'number' && typeof z.centroidLng === 'number')
+          .map((z) => ({ lat: z.centroidLat, lng: z.centroidLng })),
+        ...facilities
+          .filter((f) => typeof f.lat === 'number' && typeof f.lng === 'number')
+          .map((f) => ({ lat: f.lat, lng: f.lng })),
+      ];
+
+      if (!points.length) {
+        svg.innerHTML = `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" class="map-empty">No zones or facilities yet — seed the registry to see them here.</text>`;
+        return;
+      }
+
+      const lats = points.map((p) => p.lat);
+      const lngs = points.map((p) => p.lng);
+      const latSpan = Math.max(Math.max(...lats) - Math.min(...lats), 0.02);
+      const lngSpan = Math.max(Math.max(...lngs) - Math.min(...lngs), 0.02);
+      const minLat = Math.min(...lats);
+      const minLng = Math.min(...lngs);
+      const pad = 60;
+
+      function project(lat, lng) {
+        return {
+          x: pad + ((lng - minLng) / lngSpan) * (width - 2 * pad),
+          y: height - pad - ((lat - minLat) / latSpan) * (height - 2 * pad),
+        };
+      }
+
+      const parts = [];
+
+      zones.forEach((z) => {
+        if (typeof z.centroidLat !== 'number' || typeof z.centroidLng !== 'number') return;
+        const { x, y } = project(z.centroidLat, z.centroidLng);
+        const color = bandColor(z.__band);
+        parts.push(
+          `<circle class="map-dot" cx="${x}" cy="${y}" r="12" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="2" onclick="openZoneDetail('${z.id}')"><title>${z.name} — ${z.__band || 'unknown'} risk</title></circle>`,
+        );
+        parts.push(`<text x="${x}" y="${y - 17}" text-anchor="middle" class="map-label">${z.name}</text>`);
+      });
+
+      facilities.forEach((f) => {
+        if (typeof f.lat !== 'number' || typeof f.lng !== 'number') return;
+        const { x, y } = project(f.lat, f.lng);
+        parts.push(
+          `<rect class="map-dot" x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" fill="var(--muted)" onclick="openZoneDetail('${f.zoneId}')"><title>${f.name} — ${f.bedsAvailable}/${f.bedsTotal} beds</title></rect>`,
+        );
+        parts.push(`<text x="${x}" y="${y + 17}" text-anchor="middle" class="map-label">${f.name}</text>`);
+      });
+
+      svg.innerHTML = parts.join('');
+    }
+
+    // Seeding is one way to get an active zone/patient for stages 2-5, not
+    // the only way — if data already exists (from an earlier run, or a
+    // page reload), pick up the most recently created zone/patient instead
+    // of forcing a fresh seed every time.
+    // Resuming existing data shouldn't lose the thread of a journey that
+    // already ran — a placement or assessment already carries the real
+    // correlationId from when it happened, so recover that instead of
+    // fabricating a new one with no matching telemetry events.
+    async function recoverCorrelationId(patientId) {
+      if (!patientId) return null;
+      const status = await safeJson(`/v1/registry/patients/${patientId}/status`);
+      return (
+        status?.latestPlacement?.correlationId ||
+        status?.latestAssessment?.correlationId ||
+        null
+      );
+    }
+
+    async function hydrateDemoState() {
+      if (demoState.zoneId || !latestState.zones.length) return;
+
+      const zone = [...latestState.zones].sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+      )[0];
+      const zonePatients = latestState.patients.filter((p) => p.zoneId === zone.id);
+      const patient = zonePatients.find((p) => p.isAntenatal) || zonePatients[0];
+      const facility = latestState.facilities.find((f) => f.zoneId === zone.id);
+      const chw = latestState.chws.find((c) => c.catchmentZoneId === zone.id);
+      const recovered = await recoverCorrelationId(patient?.id);
+
+      demoState = {
+        zoneId: zone.id,
+        patientId: patient?.id,
+        facilityId: facility?.id,
+        chwId: chw?.id,
+        correlationId: recovered || `demo-resume-${Date.now()}`,
+      };
+      document.getElementById('run-status').textContent = `Resumed: ${zone.name}`;
+      document.getElementById('scenario-correlation').textContent =
+        `correlationId: ${demoState.correlationId}`;
+      updateButtonStates();
+    }
+
+    async function useZoneForDemo(zoneId) {
+      const zone = latestState.zones.find((z) => z.id === zoneId);
+      const facility = latestState.facilities.find((f) => f.zoneId === zoneId);
+      const chw = latestState.chws.find((c) => c.catchmentZoneId === zoneId);
+      let correlationId = demoState.correlationId;
+      if (!correlationId) {
+        const zonePatients = latestState.patients.filter((p) => p.zoneId === zoneId);
+        const repPatient = zonePatients.find((p) => p.isAntenatal) || zonePatients[0];
+        correlationId = (await recoverCorrelationId(repPatient?.id)) || `demo-resume-${Date.now()}`;
+      }
+      demoState = {
+        ...demoState,
+        zoneId,
+        facilityId: facility?.id ?? demoState.facilityId,
+        chwId: chw?.id ?? demoState.chwId,
+        correlationId,
+      };
+      document.getElementById('scenario-correlation').textContent =
+        `correlationId: ${demoState.correlationId}`;
+      document.getElementById('run-status').textContent = `Active zone: ${zone?.name || zoneId}`;
+      updateButtonStates();
+      closeModal();
+    }
+
+    async function usePatientForDemo(patientId, zoneId) {
+      let correlationId = demoState.correlationId;
+      if (!correlationId) {
+        correlationId = (await recoverCorrelationId(patientId)) || `demo-resume-${Date.now()}`;
+      }
+      demoState = {
+        ...demoState,
+        patientId,
+        zoneId: zoneId || demoState.zoneId,
+        correlationId,
+      };
+      document.getElementById('scenario-correlation').textContent =
+        `correlationId: ${demoState.correlationId}`;
+      updateButtonStates();
+      closeModal();
+    }
+
+    // --- Scenario dashboard: one card per pipeline stage ---
+    const STAGES = [
+      { step: 0, label: 'Registry' },
+      { step: 1, label: 'Climate ingestion' },
+      { step: 2, label: 'Zone risk' },
+      { step: 3, label: 'Cohort resolution' },
+      { step: 4, label: 'Campaign dispatch' },
+      { step: 5, label: 'Triage decision' },
+      { step: 6, label: 'CHW escalation' },
+      { step: 7, label: 'Facility placement' },
+      { step: 8, label: 'EHR record transfer' },
+      { step: 9, label: 'Telemetry' },
+    ];
+
+    function actionBadge(action) {
+      const a = (action || '').toLowerCase();
+      const cls = a === 'escalate' ? 'badge-high' : a === 'guidance' ? 'badge-low' : 'badge-medium';
+      return `<span class="badge ${cls}">${action}</span>`;
+    }
+
+    function checkMark(bool) {
+      return bool ? '✓' : '✗';
+    }
+
+    // Human-readable rationale for why routing picked this facility —
+    // reconstructed from the three constraint checks link 7 actually scores
+    // on (see FacilityRouterService.selectReceiving).
+    function placementReason(pl) {
+      const positives = [];
+      const negatives = [];
+      (pl.bedConfirmed ? positives : negatives).push('a bed was available');
+      (pl.specialtyMatched ? positives : negatives).push('the required specialty matched');
+      (pl.roadAccessible ? positives : negatives).push('the road is accessible');
+      let text = 'Selected because ' + (positives.join(', ') || 'no constraints were satisfied') + '.';
+      if (negatives.length) {
+        text += ` Note: ${negatives.join(', ')} not confirmed.`;
+      }
+      return text;
+    }
+
+    async function doTransferRecord(patientId, placementId, backZoneId) {
+      const el = document.getElementById('transfer-status');
+      if (el) el.innerHTML = '<span class="spinner"></span><span class="run-status">Transferring…</span>';
+      try {
+        const res = await fetch('/v1/demo/transfer-record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ patientId, placementId }),
+        });
+        const text = await res.text();
+        const body = text ? JSON.parse(text) : undefined;
+        if (!res.ok) {
+          throw new Error(body?.message || `HTTP ${res.status}`);
+        }
+        await openPatientStatus(patientId, backZoneId);
+        showToast('Record transferred to facility.', 'success');
+        refreshConnectionStatus();
+      } catch (err) {
+        if (el) el.innerHTML = `<div class="error-box">Transfer failed: ${err.message || err}</div>`;
+        showToast(`Transfer failed: ${err.message || err}`, 'error');
+      }
+    }
+
+    // Returns { value, sub } — value is the card's headline, sub is supporting detail.
+    function stageContent(step, d) {
+      switch (step) {
+        case 0:
+          return {
+            value: d.zone?.name ?? '—',
+            sub: `<b>${d.facilities?.length ?? 0}</b> facilities · <b>${d.chws?.length ?? 0}</b> CHWs · <b>${d.patients?.length ?? 0}</b> patients registered`,
+          };
+        case 1:
+          return {
+            value: `${d.totalRecords} records`,
+            sub: `${d.sources?.length ?? 0} source adapter(s)`,
+          };
+        case 2: {
+          const r = d.result || {};
+          return {
+            value: bandBadge(r.band),
+            sub: `${r.explanation || ''} Facility risk scores: <b>${d.facilityRiskScores?.length ?? 0}</b>.`,
+          };
+        }
+        case 3:
+          return {
+            value: `${d.cohorts?.length ?? 0} patient(s)`,
+            sub: 'antenatal-care · under-five · chronic-condition',
+          };
+        case 4:
+          return {
+            value: `${d.sent} sent · ${d.failed} failed`,
+            sub: `campaign <b>${d.campaignId || ''}</b> — mock SMS adapter, nothing real sent`,
+          };
+        case 5: {
+          const decision = d.decision || {};
+          return {
+            value: actionBadge(decision.action),
+            sub: decision.forcedBySafetyRule
+              ? `backend <b>${d.response?.backendId}</b> — <b>forced by safety floor:</b> ${decision.forcedBySafetyRule}`
+              : `backend <b>${d.response?.backendId}</b>`,
+          };
+        }
+        case 6:
+          return { value: 'Escalated', sub: d.message || '' };
+        case 7:
+          return {
+            value: `Bed ${checkMark(d.bedConfirmed)} · Specialty ${checkMark(d.specialtyMatched)} · Road ${checkMark(d.roadAccessible)}`,
+            sub: `facility <b>${d.facilityId || '—'}</b>`,
+          };
+        case 8:
+          return { value: 'Not run', sub: d.message || '' };
+        case 9:
+          return {
+            value: `<code>${d.correlationId || ''}</code>`,
+            sub: 'shared across every step above — grep server logs to reconstruct the timeline',
+          };
+        default:
+          return { value: '—', sub: '' };
+      }
+    }
+
+    let loadingStepNumbers = new Set();
+
+    function renderStageCard(def, stepData) {
+      const done = !!stepData;
+      const loading = loadingStepNumbers.has(def.step);
+      const content = done
+        ? stageContent(def.step, stepData.detail || {})
+        : { value: '—', sub: loading ? 'running…' : 'not run yet' };
+      const detailBlock = done
+        ? `<details class="stage-detail">
+            <summary>raw response</summary>
+            <pre>${JSON.stringify(stepData.detail, null, 2)}</pre>
+          </details>`
+        : '';
+      const stateClass = loading ? 'loading' : done ? 'done' : 'pending';
+      return `
+        <div class="stage-card ${stateClass}">
+          <div class="stage-head">
+            <span class="stage-num">${loading ? '<span class=\"spinner\"></span>' : def.step}</span>
+            <span class="stage-label">${def.label}</span>
+          </div>
+          <div class="stage-value">${content.value}</div>
+          <div class="stage-sub">${content.sub}</div>
+          ${detailBlock}
+        </div>
+      `;
+    }
+
+    function renderStageGrid(steps) {
+      const el = document.getElementById('scenario-grid');
+      const byStep = new Map((steps || []).map((s) => [s.step, s]));
+      el.innerHTML = STAGES.map((def) => renderStageCard(def, byStep.get(def.step))).join('');
+    }
+
+    // --- Simulated progress bar: real requests are single round-trips with
+    // no server-sent progress, so this fakes a smooth fill (easing toward
+    // ~88%, never claiming completion) while a request is in flight, then
+    // snaps to 100% (green) or stays red (failure) on completion. ---
+    let progressTimer = null;
+
+    function startProgress() {
+      const track = document.getElementById('progress-track');
+      const fill = document.getElementById('progress-fill');
+      clearInterval(progressTimer);
+      track.classList.add('active');
+      fill.style.background = 'var(--accent)';
+      let pct = 8;
+      fill.style.width = `${pct}%`;
+      progressTimer = setInterval(() => {
+        pct += (88 - pct) * 0.12;
+        fill.style.width = `${pct}%`;
+      }, 120);
+    }
+
+    function finishProgress(success) {
+      clearInterval(progressTimer);
+      const track = document.getElementById('progress-track');
+      const fill = document.getElementById('progress-fill');
+      fill.style.width = '100%';
+      fill.style.background = success ? 'var(--good)' : 'var(--critical)';
+      setTimeout(() => {
+        track.classList.remove('active');
+        fill.style.width = '0%';
+      }, 600);
+    }
+
+    // --- Stage-by-stage demo runner: each stage is its own explicit action ---
+    let demoState = {};
+    let collectedSteps = {};
+
+    const STAGE_BUTTON_INDEX = { registry: 0, alert: 1, campaign: 2, triage: 3, placement: 4 };
+
+    function stageButtons() {
+      return document.querySelectorAll('.stage-btn:not(.reset-btn)');
+    }
+
+    function updateButtonStates() {
+      const buttons = stageButtons();
+      buttons[STAGE_BUTTON_INDEX.registry].disabled = false;
+      buttons[STAGE_BUTTON_INDEX.alert].disabled = !demoState.zoneId;
+      buttons[STAGE_BUTTON_INDEX.campaign].disabled = !demoState.zoneId;
+      buttons[STAGE_BUTTON_INDEX.triage].disabled = !demoState.patientId;
+      buttons[STAGE_BUTTON_INDEX.placement].disabled = !demoState.patientId;
+    }
+
+    function mergeSteps(steps) {
+      for (const s of steps) collectedSteps[s.step] = s;
+      renderStageGrid(Object.values(collectedSteps));
+    }
+
+    async function postDemo(path, body) {
+      const res = await fetch(`/v1/demo/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      const text = await res.text();
+      const parsed = text ? JSON.parse(text) : undefined;
+      if (!res.ok) {
+        throw new Error(parsed?.message || `HTTP ${res.status}`);
+      }
+      return parsed;
+    }
+
+    const STAGE_STEPS = {
+      registry: [0],
+      alert: [1, 2],
+      campaign: [3, 4],
+      triage: [5, 6],
+      placement: [7, 8, 9],
+    };
+
+    async function runFullDemo() {
+      const button = document.getElementById('run-full-button');
+      button.disabled = true;
+      try {
+        for (const name of ['registry', 'alert', 'campaign', 'triage', 'placement']) {
+          const ok = await runStage(name);
+          if (!ok) {
+            showToast(`Full demo stopped at "${name}" — see status above.`, 'error');
+            return;
+          }
+        }
+        showToast('Full demo run complete.', 'success');
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function runStage(name) {
+      const status = document.getElementById('run-status');
+      const correlationLabel = document.getElementById('scenario-correlation');
+      const buttons = stageButtons();
+      buttons.forEach((b) => (b.disabled = true));
+      status.innerHTML = `<span class="spinner"></span>Running: ${name}…`;
+      startProgress();
+      loadingStepNumbers = new Set(STAGE_STEPS[name]);
+      renderStageGrid(Object.values(collectedSteps));
+
+      try {
+        let result;
+        switch (name) {
+          case 'registry':
+            result = await postDemo('seed-registry');
+            demoState = { ...demoState, ...result.ids, correlationId: result.correlationId };
+            correlationLabel.textContent = `correlationId: ${demoState.correlationId}`;
+            break;
+          case 'alert':
+            result = await postDemo('trigger-alert', {
+              zoneId: demoState.zoneId,
+              correlationId: demoState.correlationId,
+            });
+            break;
+          case 'campaign':
+            result = await postDemo('dispatch-campaign', {
+              zoneId: demoState.zoneId,
+              correlationId: demoState.correlationId,
+            });
+            demoState = { ...demoState, ...result.ids };
+            lastCampaignId = demoState.campaignId;
+            break;
+          case 'triage':
+            result = await postDemo('run-triage', {
+              patientId: demoState.patientId,
+              zoneId: demoState.zoneId,
+              correlationId: demoState.correlationId,
+            });
+            break;
+          case 'placement':
+            result = await postDemo('place-facility', {
+              patientId: demoState.patientId,
+              zoneId: demoState.zoneId,
+              correlationId: demoState.correlationId,
+            });
+            break;
+        }
+        loadingStepNumbers = new Set();
+        mergeSteps(result.steps);
+        status.textContent = `${name} complete`;
+        finishProgress(true);
+        refreshAll();
+        return true;
+      } catch (err) {
+        loadingStepNumbers = new Set();
+        renderStageGrid(Object.values(collectedSteps));
+        status.textContent = `${name} failed: ${err.message || err}`;
+        finishProgress(false);
+        showToast(`${name} failed: ${err.message || err}`, 'error');
+        return false;
+      } finally {
+        updateButtonStates();
+      }
+    }
+
+    function resetDemo() {
+      demoState = {};
+      collectedSteps = {};
+      lastCampaignId = null;
+      document.getElementById('run-status').textContent = '';
+      document.getElementById('scenario-correlation').textContent = '';
+      renderStageGrid(null);
+      updateButtonStates();
+      refreshAll();
+    }
+
+    async function clearAllData() {
+      if (!confirm('This permanently deletes every zone, facility, CHW, patient and their full history (triage, messages, placements, alerts). Continue?')) {
+        return;
+      }
+      const status = document.getElementById('run-status');
+      status.innerHTML = '<span class="spinner"></span>Clearing all data…';
+      startProgress();
+      try {
+        const res = await fetch('/v1/demo/clear-data', { method: 'POST' });
+        const text = await res.text();
+        const body = text ? JSON.parse(text) : undefined;
+        if (!res.ok) {
+          throw new Error(body?.message || `HTTP ${res.status}`);
+        }
+        finishProgress(true);
+        status.textContent = 'All data cleared';
+        showToast('All demo data cleared.', 'success');
+        resetDemo();
+      } catch (err) {
+        finishProgress(false);
+        status.textContent = `Clear failed: ${err.message || err}`;
+        showToast(`Clear failed: ${err.message || err}`, 'error');
+      }
+    }
+
+    // --- Modal: zone detail and patient status, click-through ---
+    function closeModal() {
+      document.getElementById('modal-root').innerHTML = '';
+    }
+
+    function showModal(innerHtml) {
+      document.getElementById('modal-root').innerHTML = `
+        <div class="modal-overlay" onclick="if (event.target === this) closeModal()">
+          <div class="modal">${innerHtml}</div>
+        </div>
+      `;
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    function cohortTags(p) {
+      const tags = [];
+      if (p.isAntenatal) tags.push('antenatal');
+      if (p.isUnderFiveHousehold) tags.push('under-five');
+      if (p.hasChronicCondition) tags.push('chronic');
+      return tags.map((t) => `<span class="tag">${t}</span>`).join('') || '<span class="tag">none</span>';
+    }
+
+    async function openZoneDetail(zoneId) {
+      const zone = latestState.zones.find((z) => z.id === zoneId);
+      const trigger = await safeJson(`/v1/zones/${zoneId}/trigger`);
+      const communityReports = (await safeJson(`/v1/community-reports/zone/${zoneId}`)) || [];
+      const localFacilities = latestState.facilities.filter((f) => f.zoneId === zoneId);
+      const localChws = latestState.chws.filter((c) => c.catchmentZoneId === zoneId);
+      const localPatients = latestState.patients.filter((p) => p.zoneId === zoneId);
+
+      const chwName = (chwId) =>
+        latestState.chws.find((c) => c.id === chwId)?.name || '—';
+
+      const facilityRows = localFacilities.length
+        ? localFacilities
+            .map((f) => {
+              const specialties = (f.specialties || []).map((s) => s.code || s).join(', ') || '—';
+              return `<tr><td>${f.name}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${specialties}</td></tr>`;
+            })
+            .join('')
+        : `<tr><td colspan="3" class="empty">No facilities in this zone.</td></tr>`;
+
+      const chwRows = localChws.length
+        ? localChws
+            .map((c) => `<tr><td>${c.name}</td><td>${c.phone}</td><td>${(c.languages || []).join(', ')}</td></tr>`)
+            .join('')
+        : `<tr><td colspan="3" class="empty">No CHWs assigned to this zone.</td></tr>`;
+
+      const patientRows = localPatients.length
+        ? localPatients
+            .map(
+              (p) => `
+        <tr class="clickable" onclick="openPatientStatus('${p.id}', '${zoneId}')">
+          <td>${p.name || p.msisdn}</td>
+          <td>${cohortTags(p)}</td>
+          <td>${chwName(p.assignedChwId)}</td>
+        </tr>`,
+            )
+            .join('')
+        : `<tr><td colspan="3" class="empty">No patients registered in this zone yet.</td></tr>`;
+
+      const reportRows = communityReports.length
+        ? communityReports
+            .map(
+              (r) => `
+        <tr>
+          <td>${r.reportType}</td>
+          <td>${r.severity || '—'}</td>
+          <td>${r.verificationStatus}</td>
+          <td>${r.freeText || '—'}</td>
+        </tr>`,
+            )
+            .join('')
+        : `<tr><td colspan="4" class="empty">No community reports for this zone.</td></tr>`;
+
+      const isActive = demoState.zoneId === zoneId;
+      showModal(`
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${zone?.name || 'Zone'}</div>
+            <div class="run-status">${zone ? `${zone.centroidLat?.toFixed(3)}, ${zone.centroidLng?.toFixed(3)}` : ''}</div>
+          </div>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+
+        <button class="run-button" style="margin-left:0; margin-bottom:1rem;" ${isActive ? 'disabled' : ''} onclick="useZoneForDemo('${zoneId}')">
+          ${isActive ? 'Active demo zone' : 'Use this zone for demo stages 2-3'}
+        </button>
+
+        <div class="detail-section">
+          <h3>Risk</h3>
+          <div class="status-card">
+            ${bandBadge(trigger?.band)} ${trigger?.explanation || 'No trigger evaluated yet for this zone.'}
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Community health workers (${localChws.length})</h3>
+          <table><thead><tr><th>Name</th><th>Phone</th><th>Languages</th></tr></thead><tbody>${chwRows}</tbody></table>
+        </div>
+
+        <div class="detail-section">
+          <h3>Facilities in zone (${localFacilities.length})</h3>
+          <table><thead><tr><th>Facility</th><th>Beds</th><th>Specialties</th></tr></thead><tbody>${facilityRows}</tbody></table>
+        </div>
+
+        <div class="detail-section">
+          <h3>Patients / cohort (${localPatients.length})</h3>
+          <table><thead><tr><th>Patient</th><th>Cohort</th><th>Assigned CHW</th></tr></thead><tbody>${patientRows}</tbody></table>
+        </div>
+
+        <div class="detail-section">
+          <h3>Community reports (${communityReports.length})</h3>
+          <table><thead><tr><th>Type</th><th>Severity</th><th>Status</th><th>Notes</th></tr></thead><tbody>${reportRows}</tbody></table>
+        </div>
+
+        ${
+          demoState.correlationId
+            ? `<div class="detail-section">
+                <h3>Telemetry</h3>
+                <button class="run-button" style="margin-left:0;" onclick="closeModal(); openTelemetryTimeline();">View this journey's timeline</button>
+              </div>`
+            : ''
+        }
+      `);
+    }
+
+    async function openTelemetryTimeline() {
+      if (!demoState.correlationId) {
+        showModal(`
+          <div class="modal-head">
+            <div class="modal-title">Telemetry timeline</div>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+          </div>
+          <div class="empty">No active demo journey yet — run "Seed registry" or pick an existing zone/patient first.</div>
+        `);
+        return;
+      }
+
+      const events = (await safeJson(`/v1/telemetry/timeline/${demoState.correlationId}`)) || [];
+
+      const rows = events.length
+        ? events
+            .map((e) => {
+              const { type, correlationId, eventId, emitterModule, occurredAt, ...rest } = e;
+              const time = new Date(occurredAt).toLocaleTimeString();
+              const restText = Object.keys(rest).length
+                ? Object.entries(rest)
+                    .map(([k, v]) => `${k}: ${v}`)
+                    .join(' · ')
+                : '';
+              return `
+                <div class="status-card" style="margin-bottom:0.5rem;">
+                  <div class="stage-head" style="margin-bottom:0.15rem;">
+                    <span class="stage-label" style="text-transform:none; letter-spacing:0;">${time}</span>
+                    <span class="badge badge-unknown">${type}</span>
+                    <span class="stage-sub">${emitterModule}</span>
+                  </div>
+                  <div class="stage-sub">${restText}</div>
+                </div>`;
+            })
+            .join('')
+        : `<div class="empty">No telemetry events yet for correlationId ${demoState.correlationId} — TELEMETRY_MODE must be "memory" for this to populate (it's the default in this compose file).</div>`;
+
+      showModal(`
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">Telemetry timeline</div>
+            <div class="run-status"><code>${demoState.correlationId}</code></div>
+          </div>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div>${rows}</div>
+      `);
+    }
+
+    function statusLine(label, value) {
+      return `<div class="kv-row"><span>${label}</span><span>${value}</span></div>`;
+    }
+
+    async function openPatientStatus(patientId, backZoneId) {
+      let status;
+      try {
+        const res = await fetch(`/v1/registry/patients/${patientId}/status`);
+        const text = await res.text();
+        const body = text ? JSON.parse(text) : undefined;
+        if (!res.ok) {
+          throw new Error(body?.message || `HTTP ${res.status}`);
+        }
+        status = body;
+      } catch (err) {
+        showModal(`<div class="error-box">Could not load patient status: ${err.message || err}</div>`);
+        return;
+      }
+      const p = status.patient;
+      const a = status.latestAssessment;
+      const e = status.latestEscalation;
+      const pl = status.latestPlacement;
+      const msgs = status.recentMessages || [];
+
+      const backLink = backZoneId
+        ? `<span class="modal-back" onclick="openZoneDetail('${backZoneId}')">← Back to zone</span>`
+        : '';
+
+      const assessmentBlock = a
+        ? `<div class="status-card">
+            severity: <b>${a.severitySignal}</b> · backend: <b>${a.backendId}</b><br/>
+            ${a.guidance}<br/>
+            climate context applied: ${a.climateContextApplied ? 'yes' : 'no'}
+          </div>`
+        : `<div class="empty">No triage assessment yet.</div>`;
+
+      const escalationBlock = e
+        ? `<div class="status-card">
+            action: <b>${e.action}</b>
+            ${e.forcedBySafetyRule ? `<br/>forced by safety floor: <b>${e.forcedBySafetyRule}</b>` : ''}
+          </div>`
+        : `<div class="empty">No escalation raised.</div>`;
+
+      const placementBlock = pl
+        ? `<div class="status-card">
+            facility: <b>${pl.facility?.name || pl.facilityId}</b><br/>
+            ${placementReason(pl)}
+          </div>`
+        : `<div class="empty">No facility placement yet.</div>`;
+
+      const transferBlock = pl
+        ? pl.recordTransferredAt
+          ? `<div class="status-card">transferred at <b>${new Date(pl.recordTransferredAt).toLocaleString()}</b></div>`
+          : `<div class="status-card">
+              not yet transferred
+              <div id="transfer-status" style="margin-top:0.5rem;">
+                <button class="run-button" style="margin-left:0;" onclick="doTransferRecord('${patientId}', '${pl.id}', ${backZoneId ? `'${backZoneId}'` : 'null'})">Transfer record to facility</button>
+              </div>
+            </div>`
+        : `<div class="empty">No placement yet — nothing to transfer.</div>`;
+
+      const messageRows = msgs.length
+        ? msgs
+            .map(
+              (m) =>
+                `<tr><td>${m.channel}</td><td>${m.templateId}</td><td>${m.status}</td><td>${new Date(m.createdAt).toLocaleString()}</td></tr>`,
+            )
+            .join('')
+        : `<tr><td colspan="4" class="empty">No messages sent to this patient.</td></tr>`;
+
+      const isActivePatient = demoState.patientId === patientId;
+      showModal(`
+        ${backLink}
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${p.name || p.msisdn}</div>
+            <div class="run-status">${p.msisdn}</div>
+          </div>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+
+        <button class="run-button" style="margin-left:0; margin-bottom:1rem;" ${isActivePatient ? 'disabled' : ''} onclick="usePatientForDemo('${patientId}', ${backZoneId ? `'${backZoneId}'` : 'null'})">
+          ${isActivePatient ? 'Active demo patient' : 'Use this patient for demo stages 4-5'}
+        </button>
+
+        <div class="detail-section">
+          <h3>Registry</h3>
+          ${statusLine('Zone', p.zone?.name || '—')}
+          ${statusLine('Assigned CHW', p.assignedChw ? `${p.assignedChw.name} (${p.assignedChw.phone})` : '—')}
+          ${statusLine('Language', p.language)}
+          <div class="cohort-tags">${cohortTags(p)}</div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Latest triage</h3>
+          ${assessmentBlock}
+        </div>
+
+        <div class="detail-section">
+          <h3>Escalation</h3>
+          ${escalationBlock}
+        </div>
+
+        <div class="detail-section">
+          <h3>Facility placement</h3>
+          ${placementBlock}
+        </div>
+
+        <div class="detail-section">
+          <h3>Data transfer status</h3>
+          ${transferBlock}
+        </div>
+
+        <div class="detail-section">
+          <h3>Recent messages</h3>
+          <table><thead><tr><th>Channel</th><th>Template</th><th>Status</th><th>When</th></tr></thead><tbody>${messageRows}</tbody></table>
+        </div>
+      `);
+    }
+
+    renderStageGrid(null);
+    updateButtonStates();
+    refreshAll().then(hydrateDemoState);
     setInterval(refreshAll, 10000);
   </script>
 </body>
