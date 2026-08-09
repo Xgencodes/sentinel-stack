@@ -803,21 +803,41 @@
         };
       }
 
+      // Repeated seed runs (or facilities placed near their own zone) can
+      // project to nearly the same pixel — nudge outward in a spiral until
+      // clear of every already-placed point, so nothing is hidden behind
+      // (and unclickable under) another dot.
+      const placed = [];
+      function dedupe(point) {
+        let { x, y } = point;
+        let angle = 0;
+        let radius = 0;
+        while (placed.some((p) => Math.hypot(p.x - x, p.y - y) < 18)) {
+          angle += (2 * Math.PI) / 5;
+          radius += 7;
+          x = point.x + Math.cos(angle) * radius;
+          y = point.y + Math.sin(angle) * radius;
+        }
+        placed.push({ x, y });
+        return { x, y };
+      }
+
       const parts = [];
 
       zones.forEach((z) => {
         if (typeof z.centroidLat !== 'number' || typeof z.centroidLng !== 'number') return;
-        const { x, y } = project(z.centroidLat, z.centroidLng);
+        const { x, y } = dedupe(project(z.centroidLat, z.centroidLng));
         const color = bandColor(z.__band);
+        const label = `${z.name} #${z.id.slice(0, 4)}`;
         parts.push(
-          `<circle class="map-dot" cx="${x}" cy="${y}" r="12" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="2" onclick="openZoneDetail('${z.id}')"><title>${z.name} — ${z.__band || 'unknown'} risk</title></circle>`,
+          `<circle class="map-dot" cx="${x}" cy="${y}" r="12" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="2" onclick="openZoneDetail('${z.id}')"><title>${label} — ${z.__band || 'unknown'} risk</title></circle>`,
         );
-        parts.push(`<text x="${x}" y="${y - 17}" text-anchor="middle" class="map-label">${z.name}</text>`);
+        parts.push(`<text x="${x}" y="${y - 17}" text-anchor="middle" class="map-label">${label}</text>`);
       });
 
       facilities.forEach((f) => {
         if (typeof f.lat !== 'number' || typeof f.lng !== 'number') return;
-        const { x, y } = project(f.lat, f.lng);
+        const { x, y } = dedupe(project(f.lat, f.lng));
         parts.push(
           `<rect class="map-dot" x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" fill="var(--muted)" onclick="openZoneDetail('${f.zoneId}')"><title>${f.name} — ${f.bedsAvailable}/${f.bedsTotal} beds</title></rect>`,
         );
