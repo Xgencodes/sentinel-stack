@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sentinel — Registry</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      color-scheme: light;
+      --page:        #f9f9f7;
+      --surface:     #fcfcfb;
+      --border:      #e1e0d9;
+      --text:        #0b0b0b;
+      --muted:       #52514e;
+      --faint:       #898781;
+      --accent:      #2a78d6;
+      --good:        #0ca30c;
+      --warning:     #fab219;
+      --critical:    #d03b3b;
+      --badge-ink:   #0b0b0b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:where(:not([data-theme="light"])) {
+        color-scheme: dark;
+        --page: #0d0d0d; --surface: #1a1a19; --border: #2c2c2a;
+        --text: #ffffff; --muted: #c3c2b7; --faint: #898781;
+        --accent: #3987e5; --good: #0ca30c; --warning: #fab219; --critical: #e66767;
+        --badge-ink: #0b0b0b;
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --border: #2c2c2a;
+      --text: #ffffff; --muted: #c3c2b7; --faint: #898781;
+      --accent: #3987e5; --good: #0ca30c; --warning: #fab219; --critical: #e66767;
+      --badge-ink: #0b0b0b;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--page); color: var(--text); }
+    header {
+      padding: 1.1rem 1.5rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    }
+    header h1 { font-size: 1.15rem; margin: 0; letter-spacing: -0.01em; }
+    header .subtitle { color: var(--muted); font-size: 0.85rem; }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    .panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      padding: 1rem 1.25rem; overflow-x: auto;
+    }
+    .run-button {
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 0.55rem 1.1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      text-decoration: none; display: inline-block;
+    }
+    .run-button:hover { filter: brightness(1.08); }
+    .run-button.secondary { background: transparent; color: var(--muted); border: 1px solid var(--border); margin-left: auto; }
+    .tabs { display: flex; gap: 0.4rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+    .tab-btn {
+      background: none; border: none; padding: 0.55rem 1rem; font-size: 0.85rem;
+      color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+    h2 { font-size: 0.95rem; margin: 0 0 0.9rem; }
+    h3 { font-size: 0.78rem; color: var(--faint); text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 0.6rem; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.6rem; margin-bottom: 0.75rem; }
+    .form-grid label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); }
+    .form-grid input, .form-grid select {
+      padding: 0.45rem 0.55rem; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--page); color: var(--text); font-size: 0.82rem; font-family: inherit;
+    }
+    .checkbox-row { display: flex; gap: 1rem; font-size: 0.82rem; align-items: center; color: var(--muted); flex-wrap: wrap; margin-bottom: 0.9rem; }
+    .checkbox-row label { display: flex; align-items: center; gap: 0.3rem; }
+    .add-section { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { text-align: left; padding: 0.45rem 0.4rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--faint); font-weight: 500; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 0.12rem 0.5rem; border-radius: 999px; font-size: 0.7rem; font-weight: 650; color: var(--badge-ink); border: 1px solid var(--border); }
+    .empty { color: var(--faint); font-size: 0.82rem; padding: 0.6rem 0; }
+    #toast-root { position: fixed; bottom: 1.25rem; right: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 200; }
+    .toast {
+      background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+      border-radius: 8px; padding: 0.65rem 1rem; font-size: 0.82rem; max-width: 340px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15); animation: toast-in 0.2s ease;
+    }
+    .toast-error { border-left-color: var(--critical); }
+    .toast-success { border-left-color: var(--good); }
+    .toast.leaving { animation: toast-out 0.2s ease forwards; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes toast-out { to { opacity: 0; transform: translateY(6px); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sentinel</h1>
+    <span class="subtitle">registry — facilities, CHWs and patients</span>
+    <a href="index.html" class="run-button secondary">← Dashboard</a>
+  </header>
+
+  <main>
+    <div class="panel">
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-btn-facility" onclick="switchTab('facility')">Facilities</button>
+        <button class="tab-btn" id="tab-btn-chw" onclick="switchTab('chw')">CHWs</button>
+        <button class="tab-btn" id="tab-btn-patient" onclick="switchTab('patient')">Patients</button>
+      </div>
+
+      <!-- Facilities -->
+      <div id="tab-facility" class="tab-panel">
+        <div class="add-section">
+          <h3>Add facility</h3>
+          <form onsubmit="submitFacilityForm(event)">
+            <div class="form-grid">
+              <label>Name<input name="name" required placeholder="e.g. Ablekuma Health Post" /></label>
+              <label>Zone<select name="zoneId" required></select></label>
+              <label>Beds total<input name="bedsTotal" type="number" min="0" value="6" required /></label>
+              <label>Beds available<input name="bedsAvailable" type="number" min="0" value="6" required /></label>
+              <label>Contact phone<input name="contactPhone" placeholder="optional" /></label>
+            </div>
+            <div class="checkbox-row">
+              <label><input type="checkbox" name="specialty" value="obstetrics" /> obstetrics</label>
+              <label><input type="checkbox" name="specialty" value="pediatrics" /> pediatrics</label>
+              <label><input type="checkbox" name="specialty" value="general" checked /> general</label>
+            </div>
+            <button class="run-button" type="submit">Add facility</button>
+          </form>
+        </div>
+        <h3>All facilities</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Zone</th><th>Beds</th><th>Specialties</th><th>Contact</th></tr></thead>
+          <tbody id="facility-list"></tbody>
+        </table>
+      </div>
+
+      <!-- CHWs -->
+      <div id="tab-chw" class="tab-panel" style="display:none;">
+        <div class="add-section">
+          <h3>Add CHW</h3>
+          <form onsubmit="submitChwForm(event)">
+            <div class="form-grid">
+              <label>Name<input name="name" required placeholder="e.g. Yaw Darko" /></label>
+              <label>Phone<input name="phone" required placeholder="+15555550000" /></label>
+              <label>Catchment zone<select name="catchmentZoneId" required></select></label>
+            </div>
+            <div class="checkbox-row">
+              <label><input type="checkbox" name="language" value="en" checked /> English</label>
+              <label><input type="checkbox" name="language" value="tw" /> Twi</label>
+              <label><input type="checkbox" name="language" value="ee" /> Ewe</label>
+            </div>
+            <button class="run-button" type="submit">Add CHW</button>
+          </form>
+        </div>
+        <h3>All CHWs</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Phone</th><th>Zone</th><th>Languages</th></tr></thead>
+          <tbody id="chw-list"></tbody>
+        </table>
+      </div>
+
+      <!-- Patients -->
+      <div id="tab-patient" class="tab-panel" style="display:none;">
+        <div class="add-section">
+          <h3>Add patient</h3>
+          <form onsubmit="submitPatientForm(event)">
+            <div class="form-grid">
+              <label>Phone (MSISDN)<input name="msisdn" required placeholder="+15555550000" /></label>
+              <label>Name<input name="name" placeholder="optional" /></label>
+              <label>Zone<select name="zoneId" required></select></label>
+              <label>Assigned CHW<select name="assignedChwId"><option value="">— none —</option></select></label>
+              <label>Home facility<select name="homeFacilityId"><option value="">— none —</option></select></label>
+              <label>Language<select name="language">
+                <option value="en">English</option>
+                <option value="tw">Twi</option>
+                <option value="ee">Ewe</option>
+              </select></label>
+            </div>
+            <div class="checkbox-row">
+              <label><input type="checkbox" name="isAntenatal" /> antenatal</label>
+              <label><input type="checkbox" name="isUnderFiveHousehold" /> under-five household</label>
+              <label><input type="checkbox" name="hasChronicCondition" /> chronic condition</label>
+            </div>
+            <button class="run-button" type="submit">Add patient</button>
+          </form>
+        </div>
+        <h3>All patients</h3>
+        <table>
+          <thead><tr><th>Phone / name</th><th>Zone</th><th>Cohort</th><th>Assigned CHW</th><th>Home facility</th></tr></thead>
+          <tbody id="patient-list"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast-root"></div>
+
+  <script>
+    function showToast(message, type) {
+      const root = document.getElementById('toast-root');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type === 'error' ? 'toast-error' : type === 'success' ? 'toast-success' : ''}`;
+      toast.textContent = message;
+      root.appendChild(toast);
+      setTimeout(() => {
+        toast.classList.add('leaving');
+        setTimeout(() => toast.remove(), 200);
+      }, 4500);
+    }
+
+    async function safeJson(path) {
+      try {
+        const res = await fetch(path);
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    }
+
+    function switchTab(name) {
+      ['facility', 'chw', 'patient'].forEach((t) => {
+        document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+        document.getElementById(`tab-btn-${t}`).classList.toggle('active', t === name);
+      });
+    }
+
+    let state = { zones: [], facilities: [], chws: [], patients: [] };
+
+    function cohortTags(p) {
+      const tags = [];
+      if (p.isAntenatal) tags.push('antenatal');
+      if (p.isUnderFiveHousehold) tags.push('under-five');
+      if (p.hasChronicCondition) tags.push('chronic');
+      return tags.join(', ') || '—';
+    }
+
+    function populateSelects() {
+      const zoneOptions = state.zones.length
+        ? state.zones.map((z) => `<option value="${z.id}">${z.name}</option>`).join('')
+        : '<option value="" disabled selected>No zones yet — run the workflow on the dashboard first</option>';
+      const chwOptions = state.chws.map((c) => `<option value="${c.id}">${c.name} (${c.catchmentZone?.name || 'unassigned'})</option>`).join('');
+      const facilityOptions = state.facilities
+        .map((f) => {
+          const zone = state.zones.find((z) => z.id === f.zoneId);
+          return `<option value="${f.id}">${f.name} (${zone?.name || 'unassigned'})</option>`;
+        })
+        .join('');
+
+      document.querySelectorAll('select[name="zoneId"], select[name="catchmentZoneId"]').forEach((sel) => {
+        const current = sel.value;
+        sel.innerHTML = zoneOptions;
+        if (current) sel.value = current;
+      });
+      const chwSelect = document.querySelector('select[name="assignedChwId"]');
+      if (chwSelect) {
+        const current = chwSelect.value;
+        chwSelect.innerHTML = '<option value="">— none —</option>' + chwOptions;
+        if (current) chwSelect.value = current;
+      }
+      const homeFacilitySelect = document.querySelector('select[name="homeFacilityId"]');
+      if (homeFacilitySelect) {
+        const current = homeFacilitySelect.value;
+        homeFacilitySelect.innerHTML = '<option value="">— none —</option>' + facilityOptions;
+        if (current) homeFacilitySelect.value = current;
+      }
+    }
+
+    function renderFacilityList() {
+      const el = document.getElementById('facility-list');
+      if (!state.facilities.length) {
+        el.innerHTML = `<tr><td colspan="5" class="empty">No facilities yet.</td></tr>`;
+        return;
+      }
+      el.innerHTML = state.facilities
+        .map((f) => {
+          const zone = state.zones.find((z) => z.id === f.zoneId);
+          const specialties = (f.specialties || []).map((s) => s.code || s).join(', ') || '—';
+          return `<tr><td>${f.name}</td><td>${zone?.name || '—'}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${specialties}</td><td>${f.contactPhone || '—'}</td></tr>`;
+        })
+        .join('');
+    }
+
+    function renderChwList() {
+      const el = document.getElementById('chw-list');
+      if (!state.chws.length) {
+        el.innerHTML = `<tr><td colspan="4" class="empty">No CHWs yet.</td></tr>`;
+        return;
+      }
+      el.innerHTML = state.chws
+        .map((c) => `<tr><td>${c.name}</td><td>${c.phone}</td><td>${c.catchmentZone?.name || '—'}</td><td>${(c.languages || []).join(', ')}</td></tr>`)
+        .join('');
+    }
+
+    function renderPatientList() {
+      const el = document.getElementById('patient-list');
+      if (!state.patients.length) {
+        el.innerHTML = `<tr><td colspan="5" class="empty">No patients yet.</td></tr>`;
+        return;
+      }
+      const facilityOptions = (selectedId) =>
+        '<option value="">— none —</option>' +
+        state.facilities
+          .map((f) => `<option value="${f.id}" ${f.id === selectedId ? 'selected' : ''}>${f.name}</option>`)
+          .join('');
+      el.innerHTML = state.patients
+        .map((p) => {
+          const zone = state.zones.find((z) => z.id === p.zoneId);
+          const chw = state.chws.find((c) => c.id === p.assignedChwId);
+          return `<tr>
+            <td>${p.name || p.msisdn}</td>
+            <td>${zone?.name || '—'}</td>
+            <td>${cohortTags(p)}</td>
+            <td>${chw?.name || '—'}</td>
+            <td><select onchange="updatePatientHomeFacility('${p.id}', this.value)">${facilityOptions(p.homeFacilityId)}</select></td>
+          </tr>`;
+        })
+        .join('');
+    }
+
+    /** Sets/corrects a patient's home facility — the origin side of a record transfer. */
+    async function updatePatientHomeFacility(patientId, facilityId) {
+      if (!facilityId) return;
+      try {
+        const res = await fetch(`/v1/registry/patients/${patientId}/home-facility`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ homeFacilityId: facilityId }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        showToast('Home facility updated.', 'success');
+        await refreshAll();
+      } catch (err) {
+        showToast(`Could not update home facility: ${err.message || err}`, 'error');
+      }
+    }
+
+    async function refreshAll() {
+      const [zones, facilities, chws, patients] = await Promise.all([
+        safeJson('/v1/registry/zones'),
+        safeJson('/v1/registry/facilities'),
+        safeJson('/v1/registry/providers?role=chw'),
+        safeJson('/v1/registry/patients'),
+      ]);
+      state = { zones: zones || [], facilities: facilities || [], chws: chws || [], patients: patients || [] };
+      populateSelects();
+      renderFacilityList();
+      renderChwList();
+      renderPatientList();
+    }
+
+    async function submitFacilityForm(event) {
+      event.preventDefault();
+      const form = event.target;
+      const zone = state.zones.find((z) => z.id === form.zoneId.value);
+      if (!zone) {
+        showToast('Pick a zone first.', 'error');
+        return;
+      }
+      const specialties = Array.from(form.querySelectorAll('input[name="specialty"]:checked')).map((el) => el.value);
+      const body = {
+        name: form.name.value,
+        zoneId: zone.id,
+        lat: zone.centroidLat,
+        lng: zone.centroidLng,
+        bedsTotal: Number(form.bedsTotal.value),
+        bedsAvailable: Number(form.bedsAvailable.value),
+        specialties,
+        contactPhone: form.contactPhone.value || undefined,
+      };
+      try {
+        const res = await fetch('/v1/registry/facilities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : undefined;
+        if (!res.ok) throw new Error(parsed?.message || `HTTP ${res.status}`);
+        showToast(`Facility "${body.name}" added to ${zone.name}.`, 'success');
+        form.reset();
+        refreshAll();
+      } catch (err) {
+        showToast(`Failed to add facility: ${err.message || err}`, 'error');
+      }
+    }
+
+    async function submitChwForm(event) {
+      event.preventDefault();
+      const form = event.target;
+      const zone = state.zones.find((z) => z.id === form.catchmentZoneId.value);
+      if (!zone) {
+        showToast('Pick a catchment zone first.', 'error');
+        return;
+      }
+      const languages = Array.from(form.querySelectorAll('input[name="language"]:checked')).map((el) => el.value);
+      const body = {
+        name: form.name.value,
+        role: 'chw',
+        phone: form.phone.value,
+        catchmentZoneId: zone.id,
+        languages: languages.length ? languages : ['en'],
+      };
+      try {
+        const res = await fetch('/v1/registry/providers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : undefined;
+        if (!res.ok) throw new Error(parsed?.message || `HTTP ${res.status}`);
+        showToast(`CHW "${body.name}" added, covering ${zone.name}.`, 'success');
+        form.reset();
+        refreshAll();
+      } catch (err) {
+        showToast(`Failed to add CHW: ${err.message || err}`, 'error');
+      }
+    }
+
+    async function submitPatientForm(event) {
+      event.preventDefault();
+      const form = event.target;
+      const zone = state.zones.find((z) => z.id === form.zoneId.value);
+      if (!zone) {
+        showToast('Pick a zone first.', 'error');
+        return;
+      }
+      const body = {
+        msisdn: form.msisdn.value,
+        name: form.name.value || undefined,
+        zoneId: zone.id,
+        language: form.language.value,
+        isAntenatal: form.isAntenatal.checked,
+        isUnderFiveHousehold: form.isUnderFiveHousehold.checked,
+        hasChronicCondition: form.hasChronicCondition.checked,
+        assignedChwId: form.assignedChwId.value || undefined,
+        homeFacilityId: form.homeFacilityId.value || undefined,
+        registrationProvenance: 'dashboard',
+      };
+      try {
+        const res = await fetch('/v1/registry/patients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : undefined;
+        if (!res.ok) throw new Error(parsed?.message || `HTTP ${res.status}`);
+        showToast(`Patient ${body.msisdn} registered in ${zone.name}.`, 'success');
+        form.reset();
+        refreshAll();
+      } catch (err) {
+        showToast(`Failed to add patient: ${err.message || err}`, 'error');
+      }
+    }
+
+    refreshAll();
+    setInterval(refreshAll, 10000);
+  </script>
+</body>
+</html>

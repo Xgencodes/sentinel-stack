@@ -9,8 +9,8 @@ import {
   TelemetryModule,
 } from 'sentinel';
 import { AppController } from './app.controller';
-import { DemoController } from './demo/demo.controller';
-import { DemoService } from './demo/demo.service';
+import { WorkflowController } from './workflow/workflow.controller';
+import { WorkflowService } from './workflow/workflow.service';
 
 /**
  * The composed reference deployment: every module from ehr-bridge and
@@ -35,7 +35,7 @@ import { DemoService } from './demo/demo.service';
     ModelModule,
     DeliveryModule,
   ],
-  controllers: [AppController, DemoController],
-  providers: [DemoService],
+  controllers: [AppController, WorkflowController],
+  providers: [WorkflowService],
 })
 export class AppModule {}

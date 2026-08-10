@@ -1,11 +1,11 @@
 import { BadRequestException, Body, Controller, Get, Post } from '@nestjs/common';
-import { DemoService } from './demo.service';
+import { WorkflowService } from './workflow.service';
 
-@Controller('v1/demo')
-export class DemoController {
-  constructor(private readonly demoService: DemoService) {}
+@Controller('v1/workflow')
+export class WorkflowController {
+  constructor(private readonly workflowService: WorkflowService) {}
 
-  // Every demo stage calls other services over HTTP and can fail for many
+  // Every stage calls other services over HTTP and can fail for many
   // reasons (stale IDs after a data reset, a downstream 400, a genuine
   // bug). NestJS's default filter turns any plain thrown Error into an
   // opaque 500 "Internal server error" with the real message logged
@@ -24,20 +24,20 @@ export class DemoController {
 
   @Post('seed-registry')
   async seedRegistry() {
-    return this.run(() => this.demoService.seedRegistry());
+    return this.run(() => this.workflowService.seedRegistry());
   }
 
   @Post('trigger-alert')
   async triggerAlert(@Body() body: { zoneId: string; correlationId: string }) {
     return this.run(() =>
-      this.demoService.triggerAlert(body.zoneId, body.correlationId),
+      this.workflowService.triggerAlert(body.zoneId, body.correlationId),
     );
   }
 
   @Post('dispatch-campaign')
   async dispatchCampaign(@Body() body: { zoneId: string; correlationId: string }) {
     return this.run(() =>
-      this.demoService.dispatchCampaign(body.zoneId, body.correlationId),
+      this.workflowService.dispatchCampaign(body.zoneId, body.correlationId),
     );
   }
 
@@ -52,7 +52,7 @@ export class DemoController {
     },
   ) {
     return this.run(() =>
-      this.demoService.runTriage(
+      this.workflowService.runTriage(
         body.patientId,
         body.zoneId,
         body.correlationId,
@@ -66,27 +66,49 @@ export class DemoController {
     @Body() body: { patientId: string; zoneId: string; correlationId: string },
   ) {
     return this.run(() =>
-      this.demoService.placeFacility(body.patientId, body.zoneId, body.correlationId),
+      this.workflowService.placeFacility(body.patientId, body.zoneId, body.correlationId),
     );
   }
 
-  /** Link 8, for real: drives an actual ehr-bridge peer-to-peer transfer. */
-  @Post('transfer-record')
-  async transferRecord(@Body() body: { patientId: string; placementId: string }) {
+  @Post('monitor-patient')
+  async monitorPatient(
+    @Body() body: { patientId: string; facilityId: string; correlationId: string },
+  ) {
     return this.run(() =>
-      this.demoService.transferRecord(body.patientId, body.placementId),
+      this.workflowService.monitorPatient(body.patientId, body.facilityId, body.correlationId),
     );
   }
 
-  /** Wipes sentinel's own demo data (registry + core schemas) so a fresh run doesn't pile up. */
+  /** Link 8, for real: drives an actual ehr-bridge peer-to-peer transfer between two facilities. */
+  @Post('transfer-record')
+  async transferRecord(
+    @Body()
+    body: {
+      patientId: string;
+      placementId: string;
+      originFacilityId: string;
+      destinationFacilityId: string;
+    },
+  ) {
+    return this.run(() =>
+      this.workflowService.transferRecord(
+        body.patientId,
+        body.placementId,
+        body.originFacilityId,
+        body.destinationFacilityId,
+      ),
+    );
+  }
+
+  /** Wipes sentinel's own case data (registry + core schemas) so a fresh run doesn't pile up. */
   @Post('clear-data')
   async clearData() {
-    return this.run(() => this.demoService.clearAllData());
+    return this.run(() => this.workflowService.clearAllData());
   }
 
   /** Whether the ehr-bridge System A <-> System B connection is established this process. */
   @Get('connection-status')
   connectionStatus() {
-    return this.demoService.connectionStatus();
+    return this.workflowService.connectionStatus();
   }
 }

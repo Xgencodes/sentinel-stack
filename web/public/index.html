@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <title>Sentinel — Reference Deployment</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <style>
     :root {
       color-scheme: light;
@@ -254,26 +256,66 @@
     .legend-zone { border-radius: 50%; background: var(--accent); }
     .legend-facility { background: var(--muted); }
 
-    #map-svg {
+    #map-container {
       width: 100%;
-      height: 320px;
+      height: 380px;
       background: var(--page);
       border: 1px solid var(--border);
       border-radius: 8px;
     }
-    .map-dot { cursor: pointer; }
-    .map-dot:hover { opacity: 0.75; }
-    .map-label {
-      font-size: 9px;
-      fill: var(--muted);
-      pointer-events: none;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    }
     .map-empty {
-      fill: var(--faint);
-      font-size: 12px;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 380px;
+      color: var(--faint);
+      font-size: 0.82rem;
     }
+    /* Leaflet's own UI (attribution, zoom controls, popups) rendered in the
+       page's ink/surface tokens instead of Leaflet's default light chrome,
+       so it doesn't look like a pasted-in widget in dark mode. */
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+      background: var(--surface);
+      color: var(--text);
+    }
+    .leaflet-container { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--page); }
+    .facility-icon {
+      background: var(--muted);
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 1px var(--border);
+    }
+    .zone-tooltip { font-size: 0.75rem; }
+
+    .tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+    .tab-btn {
+      background: none;
+      border: none;
+      padding: 0.5rem 0.9rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.6rem;
+      margin-bottom: 0.75rem;
+    }
+    .form-grid label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); }
+    .form-grid input, .form-grid select {
+      padding: 0.4rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--page);
+      color: var(--text);
+      font-size: 0.82rem;
+      font-family: inherit;
+    }
+    .checkbox-row { display: flex; gap: 1rem; font-size: 0.82rem; align-items: center; color: var(--muted); flex-wrap: wrap; }
+    .checkbox-row label { display: flex; align-items: center; gap: 0.3rem; }
 
     #toast-root {
       position: fixed;
@@ -282,7 +324,8 @@
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
-      z-index: 200;
+      /* Above the modal (5000) too, so a toast fired while a modal is open still shows. */
+      z-index: 5100;
     }
     .toast {
       background: var(--surface);
@@ -393,7 +436,11 @@
       justify-content: center;
       padding: 4vh 1rem;
       overflow-y: auto;
-      z-index: 100;
+      /* Leaflet's own panes/controls use z-index up to 1000 (see its
+         leaflet.css) — anything lower here gets rendered under the map
+         despite the modal being later in the DOM, since z-index compares
+         globally across sibling stacking contexts, not DOM order. */
+      z-index: 5000;
     }
     .modal {
       background: var(--surface);
@@ -461,6 +508,7 @@
     <h1>Sentinel</h1>
     <span class="subtitle">reference deployment — climate signal to care, in one process</span>
     <span class="run-status" id="run-status"></span>
+    <a href="registry.html" class="run-button" style="text-decoration:none; display:inline-block;">Registry →</a>
   </header>
 
   <main>
@@ -475,7 +523,7 @@
           <span class="legend-item"><span class="legend-dot legend-facility"></span>facility</span>
         </span>
       </h2>
-      <svg id="map-svg" viewBox="0 0 640 380" preserveAspectRatio="xMidYMid meet"></svg>
+      <div id="map-container"></div>
     </div>
 
     <div class="grid">
@@ -503,7 +551,7 @@
       <div class="panel">
         <h2>Alert feed</h2>
         <table>
-          <thead><tr><th>When</th><th>Band</th><th>Message</th></tr></thead>
+          <thead><tr><th>When</th><th>Band</th><th>Message</th><th>Status</th><th></th></tr></thead>
           <tbody id="alerts"></tbody>
         </table>
       </div>
@@ -519,18 +567,19 @@
 
     <div class="panel wide">
       <h2>
-        Scenario dashboard
+        Case workflow
         <span class="run-status" id="scenario-correlation"></span>
         <button class="run-button" style="margin-left:0.5rem; padding:0.25rem 0.6rem; font-size:0.72rem;" onclick="openTelemetryTimeline()">View timeline</button>
       </h2>
       <div class="stage-controls" id="stage-controls">
-        <button class="run-button" id="run-full-button" onclick="runFullDemo()">▶ Run full demo</button>
-        <button class="run-button stage-btn" onclick="runStage('registry')">1. Seed registry</button>
-        <button class="run-button stage-btn" onclick="runStage('alert')" disabled>2. Trigger climate alert</button>
-        <button class="run-button stage-btn" onclick="runStage('campaign')" disabled>3. Dispatch campaign</button>
-        <button class="run-button stage-btn" onclick="runStage('triage')" disabled>4. Run triage</button>
-        <button class="run-button stage-btn" onclick="runStage('placement')" disabled>5. Place patient</button>
-        <button class="run-button stage-btn reset-btn" onclick="resetDemo()">Reset</button>
+        <button class="run-button" id="run-full-button" onclick="runFullWorkflow()">▶ Run full workflow</button>
+        <button class="run-button stage-btn" onclick="runStage('registry')">1. Registry</button>
+        <button class="run-button stage-btn" onclick="runStage('alert')" disabled>2. Risk alert</button>
+        <button class="run-button stage-btn" onclick="runStage('campaign')" disabled>3. Campaign dispatch</button>
+        <button class="run-button stage-btn" onclick="runStage('triage')" disabled>4. Triage</button>
+        <button class="run-button stage-btn" onclick="runStage('placement')" disabled>5. Placement</button>
+        <button class="run-button stage-btn" onclick="runStage('monitoring')" disabled>6. Monitoring</button>
+        <button class="run-button stage-btn reset-btn" onclick="resetCase()">Reset</button>
         <button class="run-button clear-btn" onclick="clearAllData()">Clear all data</button>
       </div>
       <div class="progress-track" id="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
@@ -569,6 +618,16 @@
       return `<span class="badge badge-${['low', 'medium', 'high'].includes(b) ? b : 'unknown'}">${b}</span>`;
     }
 
+    // A risk episode's lifecycle state — open (still active), resolved
+    // (band dropped back to LOW on its own), dismissed (closed early on
+    // human judgment). Reuses the band badge's color scale: open reads as
+    // urgent (high), resolved/dismissed read as settled (low/muted).
+    function statusBadge(status) {
+      const s = (status || 'open').toLowerCase();
+      const cls = s === 'open' ? 'badge-high' : s === 'dismissed' ? 'badge-unknown' : 'badge-low';
+      return `<span class="badge ${cls}">${s}</span>`;
+    }
+
     function bandRank(band) {
       return { high: 3, medium: 2, low: 1 }[(band || '').toLowerCase()] || 0;
     }
@@ -581,6 +640,7 @@
       const facilities = latestState.facilities || [];
       const alerts = latestState.alerts || [];
       const messages = latestState.messages || [];
+      const patients = latestState.patients || [];
 
       const worstBand = zones
         .map((z) => z.__band)
@@ -590,11 +650,14 @@
       const bedsTotal = facilities.reduce((sum, f) => sum + (f.bedsTotal || 0), 0);
       const sent = messages.filter((m) => m.status === 'sent').length;
       const failed = messages.filter((m) => m.status === 'failed').length;
+      const openAlerts = alerts.filter((a) => a.status === 'open');
+      const openZoneIds = new Set(openAlerts.map((a) => a.zoneId));
+      const cohortSize = patients.filter((p) => openZoneIds.has(p.zoneId)).length;
 
       const tiles = [
         { label: 'Zones monitored', value: zones.length, sub: worstBand ? `highest: ${worstBand}` : 'no signals yet' },
         { label: 'Facilities', value: facilities.length, sub: `${bedsAvailable}/${bedsTotal} beds available` },
-        { label: 'Active alerts', value: alerts.length, sub: 'most recent 10' },
+        { label: 'Active risk cohorts', value: openZoneIds.size, sub: openZoneIds.size ? `${cohortSize} patient(s) in cohort` : 'no open risk episodes' },
         { label: 'Messages sent', value: sent, sub: failed ? `${failed} failed` : 'mock adapter' },
       ];
 
@@ -622,17 +685,17 @@
         .join('');
     }
 
-    // The System A <-> System B ehr-bridge connection is established lazily,
-    // on the first "Transfer record" click — this makes that otherwise
-    // invisible server-side handshake visible as a real status row.
+    // Each facility pair gets its own ehr-bridge connection, established
+    // lazily on its first "Transfer record" click — this makes that
+    // otherwise invisible server-side handshake visible as a real status row.
     async function refreshConnectionStatus() {
       const el = document.getElementById('health');
       if (!el) return;
-      const status = await safeJson('/v1/demo/connection-status');
-      const active = status?.active;
+      const status = await safeJson('/v1/workflow/connection-status');
+      const count = status?.activeConnections ?? 0;
       el.insertAdjacentHTML(
         'beforeend',
-        `<div class="health-row"><span><span class="dot ${active ? 'dot-ok' : 'dot-down'}"></span>ehr-bridge connection</span><span>${active ? 'active' : 'not yet established'}</span></div>`,
+        `<div class="health-row"><span><span class="dot ${count ? 'dot-ok' : 'dot-down'}"></span>ehr-bridge connections</span><span>${count ? `${count} active` : 'none yet'}</span></div>`,
       );
     }
 
@@ -640,7 +703,7 @@
       const el = document.getElementById('zones');
       const zones = await safeJson('/v1/registry/zones');
       if (!zones || zones.length === 0) {
-        el.innerHTML = `<tr><td colspan="3" class="empty">No zones yet — run the demo scenario or create one via the API.</td></tr>`;
+        el.innerHTML = `<tr><td colspan="3" class="empty">No zones yet — run the workflow below or create one via the API.</td></tr>`;
         latestState.zones = [];
         renderStats();
         return;
@@ -676,7 +739,7 @@
           const risk = await safeJson(`/v1/facilities/${f.id}/risk-score`);
           const loc = `${f.lat?.toFixed(3)}, ${f.lng?.toFixed(3)}`;
           const specialties = (f.specialties || []).map((s) => s.code || s).join(', ') || '—';
-          return `<tr><td>${f.name}</td><td>${loc}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${specialties}</td><td>${bandBadge(risk?.band)}</td></tr>`;
+          return `<tr class="clickable" onclick="openFacilityDetail('${f.id}')"><td>${f.name}</td><td>${loc}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${specialties}</td><td>${bandBadge(risk?.band)}</td></tr>`;
         }),
       );
       el.innerHTML = rows.join('');
@@ -688,17 +751,40 @@
       const alerts = await safeJson('/v1/alerts?limit=10');
       latestState.alerts = alerts || [];
       if (!alerts || alerts.length === 0) {
-        el.innerHTML = `<tr><td colspan="3" class="empty">No alerts yet.</td></tr>`;
+        el.innerHTML = `<tr><td colspan="5" class="empty">No alerts yet.</td></tr>`;
         renderStats();
         return;
       }
       el.innerHTML = alerts
         .map((a) => {
-          const clickable = a.zoneId ? `class="clickable" onclick="openZoneDetail('${a.zoneId}')"` : '';
-          return `<tr ${clickable}><td>${new Date(a.createdAt).toLocaleString()}</td><td>${bandBadge(a.band)}</td><td>${a.message}</td></tr>`;
+          const zoneAttrs = a.zoneId ? ` class="clickable" onclick="openZoneDetail('${a.zoneId}')"` : '';
+          const resolveBtn =
+            a.status === 'open'
+              ? `<button class="run-button" style="margin-left:0; padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="event.stopPropagation(); resolveAlert('${a.id}')">Resolve</button>`
+              : '';
+          return `<tr${zoneAttrs}><td>${new Date(a.createdAt).toLocaleString()}</td><td>${bandBadge(a.band)}</td><td>${a.message}</td><td>${statusBadge(a.status)}</td><td>${resolveBtn}</td></tr>`;
         })
         .join('');
       renderStats();
+    }
+
+    /** Closes a risk episode early on human judgment — e.g. a CHW confirms it was a false positive. */
+    async function resolveAlert(alertId) {
+      try {
+        const res = await fetch(`/v1/alerts/${alertId}/dismiss`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'Resolved from dashboard' }),
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        showToast('Risk episode resolved.', 'success');
+        await refreshAlerts();
+      } catch (err) {
+        showToast(`Could not resolve alert: ${err.message || err}`, 'error');
+      }
     }
 
     let lastCampaignId = null;
@@ -706,7 +792,7 @@
     async function refreshMessages() {
       const el = document.getElementById('messages');
       if (!lastCampaignId) {
-        el.innerHTML = `<tr><td colspan="4" class="empty">No campaign dispatched yet — run the demo scenario.</td></tr>`;
+        el.innerHTML = `<tr><td colspan="4" class="empty">No campaign dispatched yet.</td></tr>`;
         latestState.messages = [];
         renderStats();
         return;
@@ -762,89 +848,64 @@
       return styles.getPropertyValue('--faint').trim();
     }
 
-    // Plain SVG scatter plot — zones as circles (colored by risk band),
-    // facilities as squares — positioned by lat/lng normalized into the
-    // viewBox. No map tiles/library: this is a relative-position sketch of
-    // the catchment, not a georeferenced map, which is enough to show
-    // spatial relationships on camera without a mapping-service dependency.
+    // Real interactive map — Leaflet + OpenStreetMap tiles, no API key or
+    // billing account required. Zones render as real-radius circles
+    // (colored by risk band), facilities as small square markers. The map
+    // instance and tile layer are created once and reused; only the
+    // zone/facility layer is cleared and redrawn on each refresh, so pan
+    // and zoom state survives the 10s auto-refresh.
+    let leafletMap = null;
+    let mapLayerGroup = null;
+
+    function ensureMap() {
+      if (leafletMap) return;
+      leafletMap = L.map('map-container').setView([5.6, -0.2], 10);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(leafletMap);
+      mapLayerGroup = L.layerGroup().addTo(leafletMap);
+    }
+
     function renderMap() {
-      const svg = document.getElementById('map-svg');
+      ensureMap();
+      mapLayerGroup.clearLayers();
+
       const zones = latestState.zones || [];
       const facilities = latestState.facilities || [];
-      const width = 640;
-      const height = 380;
-
-      const points = [
-        ...zones
-          .filter((z) => typeof z.centroidLat === 'number' && typeof z.centroidLng === 'number')
-          .map((z) => ({ lat: z.centroidLat, lng: z.centroidLng })),
-        ...facilities
-          .filter((f) => typeof f.lat === 'number' && typeof f.lng === 'number')
-          .map((f) => ({ lat: f.lat, lng: f.lng })),
-      ];
-
-      if (!points.length) {
-        svg.innerHTML = `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" class="map-empty">No zones or facilities yet — seed the registry to see them here.</text>`;
-        return;
-      }
-
-      const lats = points.map((p) => p.lat);
-      const lngs = points.map((p) => p.lng);
-      const latSpan = Math.max(Math.max(...lats) - Math.min(...lats), 0.02);
-      const lngSpan = Math.max(Math.max(...lngs) - Math.min(...lngs), 0.02);
-      const minLat = Math.min(...lats);
-      const minLng = Math.min(...lngs);
-      const pad = 60;
-
-      function project(lat, lng) {
-        return {
-          x: pad + ((lng - minLng) / lngSpan) * (width - 2 * pad),
-          y: height - pad - ((lat - minLat) / latSpan) * (height - 2 * pad),
-        };
-      }
-
-      // Repeated seed runs (or facilities placed near their own zone) can
-      // project to nearly the same pixel — nudge outward in a spiral until
-      // clear of every already-placed point, so nothing is hidden behind
-      // (and unclickable under) another dot.
-      const placed = [];
-      function dedupe(point) {
-        let { x, y } = point;
-        let angle = 0;
-        let radius = 0;
-        while (placed.some((p) => Math.hypot(p.x - x, p.y - y) < 18)) {
-          angle += (2 * Math.PI) / 5;
-          radius += 7;
-          x = point.x + Math.cos(angle) * radius;
-          y = point.y + Math.sin(angle) * radius;
-        }
-        placed.push({ x, y });
-        return { x, y };
-      }
-
-      const parts = [];
+      const patients = latestState.patients || [];
+      const bounds = [];
 
       zones.forEach((z) => {
         if (typeof z.centroidLat !== 'number' || typeof z.centroidLng !== 'number') return;
-        const { x, y } = dedupe(project(z.centroidLat, z.centroidLng));
         const color = bandColor(z.__band);
-        const label = `${z.name} #${z.id.slice(0, 4)}`;
-        parts.push(
-          `<circle class="map-dot" cx="${x}" cy="${y}" r="12" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="2" onclick="openZoneDetail('${z.id}')"><title>${label} — ${z.__band || 'unknown'} risk</title></circle>`,
+        const patientCount = patients.filter((p) => p.zoneId === z.id).length;
+        const circle = L.circle([z.centroidLat, z.centroidLng], {
+          radius: 3000,
+          color,
+          fillColor: color,
+          fillOpacity: 0.25,
+          weight: 2,
+        }).addTo(mapLayerGroup);
+        circle.bindTooltip(
+          `<div class="zone-tooltip"><b>${z.name}</b><br/>${patientCount} patient(s) in cohort · ${z.__band || 'unknown'} risk</div>`,
         );
-        parts.push(`<text x="${x}" y="${y - 17}" text-anchor="middle" class="map-label">${label}</text>`);
+        circle.on('click', () => openZoneDetail(z.id));
+        bounds.push([z.centroidLat, z.centroidLng]);
       });
 
       facilities.forEach((f) => {
         if (typeof f.lat !== 'number' || typeof f.lng !== 'number') return;
-        const { x, y } = dedupe(project(f.lat, f.lng));
-        parts.push(
-          `<rect class="map-dot" x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" fill="var(--muted)" onclick="openZoneDetail('${f.zoneId}')"><title>${f.name} — ${f.bedsAvailable}/${f.bedsTotal} beds</title></rect>`,
-        );
-        parts.push(`<text x="${x}" y="${y + 17}" text-anchor="middle" class="map-label">${f.name}</text>`);
+        const icon = L.divIcon({ className: 'facility-icon', iconSize: [10, 10] });
+        const marker = L.marker([f.lat, f.lng], { icon }).addTo(mapLayerGroup);
+        marker.bindTooltip(`<b>${f.name}</b><br/>${f.bedsAvailable}/${f.bedsTotal} beds`);
+        marker.on('click', () => openFacilityDetail(f.id));
+        bounds.push([f.lat, f.lng]);
       });
 
-      svg.innerHTML = parts.join('');
+      if (bounds.length) {
+        leafletMap.fitBounds(bounds, { padding: [50, 50], maxZoom: 13 });
+      }
     }
 
     // Seeding is one way to get an active zone/patient for stages 2-5, not
@@ -865,8 +926,8 @@
       );
     }
 
-    async function hydrateDemoState() {
-      if (demoState.zoneId || !latestState.zones.length) return;
+    async function hydrateCaseState() {
+      if (caseState.zoneId || !latestState.zones.length) return;
 
       const zone = [...latestState.zones].sort(
         (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
@@ -877,72 +938,218 @@
       const chw = latestState.chws.find((c) => c.catchmentZoneId === zone.id);
       const recovered = await recoverCorrelationId(patient?.id);
 
-      demoState = {
+      caseState = {
         zoneId: zone.id,
         patientId: patient?.id,
         facilityId: facility?.id,
         chwId: chw?.id,
-        correlationId: recovered || `demo-resume-${Date.now()}`,
+        correlationId: recovered || `case-resume-${Date.now()}`,
       };
       document.getElementById('run-status').textContent = `Resumed: ${zone.name}`;
       document.getElementById('scenario-correlation').textContent =
-        `correlationId: ${demoState.correlationId}`;
+        `correlationId: ${caseState.correlationId}`;
       updateButtonStates();
     }
 
-    async function useZoneForDemo(zoneId) {
+    async function useZoneForCase(zoneId) {
       const zone = latestState.zones.find((z) => z.id === zoneId);
       const facility = latestState.facilities.find((f) => f.zoneId === zoneId);
       const chw = latestState.chws.find((c) => c.catchmentZoneId === zoneId);
-      let correlationId = demoState.correlationId;
+      let correlationId = caseState.correlationId;
       if (!correlationId) {
         const zonePatients = latestState.patients.filter((p) => p.zoneId === zoneId);
         const repPatient = zonePatients.find((p) => p.isAntenatal) || zonePatients[0];
-        correlationId = (await recoverCorrelationId(repPatient?.id)) || `demo-resume-${Date.now()}`;
+        correlationId = (await recoverCorrelationId(repPatient?.id)) || `case-resume-${Date.now()}`;
       }
-      demoState = {
-        ...demoState,
+      caseState = {
+        ...caseState,
         zoneId,
-        facilityId: facility?.id ?? demoState.facilityId,
-        chwId: chw?.id ?? demoState.chwId,
+        facilityId: facility?.id ?? caseState.facilityId,
+        chwId: chw?.id ?? caseState.chwId,
         correlationId,
       };
       document.getElementById('scenario-correlation').textContent =
-        `correlationId: ${demoState.correlationId}`;
+        `correlationId: ${caseState.correlationId}`;
       document.getElementById('run-status').textContent = `Active zone: ${zone?.name || zoneId}`;
       updateButtonStates();
       closeModal();
     }
 
-    async function usePatientForDemo(patientId, zoneId) {
-      let correlationId = demoState.correlationId;
+    async function usePatientForCase(patientId, zoneId) {
+      let correlationId = caseState.correlationId;
       if (!correlationId) {
-        correlationId = (await recoverCorrelationId(patientId)) || `demo-resume-${Date.now()}`;
+        correlationId = (await recoverCorrelationId(patientId)) || `case-resume-${Date.now()}`;
       }
-      demoState = {
-        ...demoState,
+      caseState = {
+        ...caseState,
         patientId,
-        zoneId: zoneId || demoState.zoneId,
+        zoneId: zoneId || caseState.zoneId,
         correlationId,
       };
       document.getElementById('scenario-correlation').textContent =
-        `correlationId: ${demoState.correlationId}`;
+        `correlationId: ${caseState.correlationId}`;
       updateButtonStates();
       closeModal();
+    }
+
+    async function openFacilityDetail(facilityId) {
+      const facility = latestState.facilities.find((f) => f.id === facilityId);
+      if (!facility) {
+        showModal(`<div class="error-box">Facility not found.</div>`);
+        return;
+      }
+      const risk = await safeJson(`/v1/facilities/${facilityId}/risk-score`);
+      const zone = latestState.zones.find((z) => z.id === facility.zoneId);
+      const specialties = (facility.specialties || []).map((s) => s.code || s).join(', ') || '—';
+
+      showModal(`
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${facility.name}</div>
+            <div class="run-status">${facility.lat?.toFixed(3)}, ${facility.lng?.toFixed(3)}</div>
+          </div>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+
+        ${zone ? `<span class="modal-back" onclick="openZoneDetail('${zone.id}')">← Back to ${zone.name}</span>` : ''}
+
+        <div class="detail-section">
+          <h3>Capacity</h3>
+          ${statusLine('Beds', `${facility.bedsAvailable} available / ${facility.bedsTotal} total`)}
+          ${statusLine('Specialties', specialties)}
+          ${statusLine('Contact phone', facility.contactPhone || '—')}
+        </div>
+
+        <div class="detail-section">
+          <h3>Risk</h3>
+          <div class="status-card">${bandBadge(risk?.band)} ${risk?.disclaimer || 'No risk score computed yet for this facility.'}</div>
+        </div>
+      `);
+    }
+
+    async function openChwDetail(chwId, backZoneId) {
+      const chw = latestState.chws.find((c) => c.id === chwId);
+      if (!chw) {
+        showModal(`<div class="error-box">CHW not found.</div>`);
+        return;
+      }
+      const activity = await safeJson(`/v1/registry/providers/${chwId}/activity`);
+      const caseload = activity?.caseload || [];
+      const messageHistory = activity?.messageHistory || [];
+      const verifiedReports = activity?.verifiedReports || [];
+
+      const caseloadRows = caseload.length
+        ? caseload
+            .map(
+              (p) => `
+        <tr class="clickable" onclick="openPatientStatus('${p.id}', ${backZoneId ? `'${backZoneId}'` : 'null'})">
+          <td>${p.name || p.msisdn}</td>
+          <td>${cohortTags(p)}</td>
+        </tr>`,
+            )
+            .join('')
+        : `<tr><td colspan="2" class="empty">No patients assigned yet.</td></tr>`;
+
+      const messageRows = messageHistory.length
+        ? messageHistory
+            .map(
+              (m) =>
+                `<tr><td>${m.templateId}</td><td>${m.status}</td><td>${new Date(m.createdAt).toLocaleString()}</td></tr>`,
+            )
+            .join('')
+        : `<tr><td colspan="3" class="empty">No messages sent to this CHW yet.</td></tr>`;
+
+      const reportRows = verifiedReports.length
+        ? verifiedReports
+            .map((r) => `<tr><td>${r.reportType}</td><td>${r.verificationStatus}</td><td>${new Date(r.createdAt).toLocaleString()}</td></tr>`)
+            .join('')
+        : `<tr><td colspan="3" class="empty">No community reports verified by this CHW yet.</td></tr>`;
+
+      const backLink = backZoneId
+        ? `<span class="modal-back" onclick="openZoneDetail('${backZoneId}')">← Back to zone</span>`
+        : '';
+
+      showModal(`
+        ${backLink}
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${chw.name}</div>
+            <div class="run-status">${chw.phone}</div>
+          </div>
+          <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+
+        <div class="detail-section">
+          <h3>Details</h3>
+          ${statusLine('Languages', (chw.languages || []).join(', ') || '—')}
+          ${statusLine('Catchment zone', chw.catchmentZone?.name || '—')}
+        </div>
+
+        <div class="detail-section">
+          <h3>Contact directly</h3>
+          <textarea id="chw-contact-text" rows="2" style="width:100%; box-sizing:border-box; border-radius:6px; border:1px solid var(--border); background:var(--page); color:var(--text); padding:0.5rem; font-family:inherit; font-size:0.82rem;" placeholder="Message to send via SMS..."></textarea>
+          <div style="margin-top:0.5rem;">
+            <button class="run-button" style="margin-left:0;" onclick="doContactChw('${chwId}')">Send message</button>
+            <span id="chw-contact-status" class="run-status"></span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <h3>Caseload (${caseload.length})</h3>
+          <table><thead><tr><th>Patient</th><th>Cohort</th></tr></thead><tbody>${caseloadRows}</tbody></table>
+        </div>
+
+        <div class="detail-section">
+          <h3>Message history</h3>
+          <table><thead><tr><th>Template</th><th>Status</th><th>When</th></tr></thead><tbody>${messageRows}</tbody></table>
+        </div>
+
+        <div class="detail-section">
+          <h3>Verified community reports</h3>
+          <table><thead><tr><th>Type</th><th>Status</th><th>When</th></tr></thead><tbody>${reportRows}</tbody></table>
+        </div>
+      `);
+    }
+
+    async function doContactChw(chwId) {
+      const textEl = document.getElementById('chw-contact-text');
+      const statusEl = document.getElementById('chw-contact-status');
+      const message = textEl.value.trim();
+      if (!message) {
+        statusEl.textContent = 'Type a message first.';
+        return;
+      }
+      statusEl.innerHTML = '<span class="spinner"></span>Sending…';
+      try {
+        const res = await fetch(`/v1/registry/providers/${chwId}/contact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, correlationId: caseState.correlationId }),
+        });
+        const text = await res.text();
+        const body = text ? JSON.parse(text) : undefined;
+        if (!res.ok) throw new Error(body?.message || `HTTP ${res.status}`);
+        statusEl.textContent = body.sent ? 'Sent.' : 'Delivery failed.';
+        showToast(body.sent ? 'Message sent to CHW.' : 'Message delivery failed.', body.sent ? 'success' : 'error');
+        textEl.value = '';
+      } catch (err) {
+        statusEl.textContent = `Failed: ${err.message || err}`;
+        showToast(`Contact failed: ${err.message || err}`, 'error');
+      }
     }
 
     // --- Scenario dashboard: one card per pipeline stage ---
     const STAGES = [
       { step: 0, label: 'Registry' },
       { step: 1, label: 'Climate ingestion' },
-      { step: 2, label: 'Zone risk' },
+      { step: 2, label: 'Risk alert' },
       { step: 3, label: 'Cohort resolution' },
       { step: 4, label: 'Campaign dispatch' },
-      { step: 5, label: 'Triage decision' },
+      { step: 5, label: 'Triage' },
       { step: 6, label: 'CHW escalation' },
-      { step: 7, label: 'Facility placement' },
-      { step: 8, label: 'EHR record transfer' },
-      { step: 9, label: 'Telemetry' },
+      { step: 7, label: 'Placement' },
+      { step: 8, label: 'Record transfer' },
+      { step: 10, label: 'Monitoring' },
     ];
 
     function actionBadge(action) {
@@ -953,6 +1160,28 @@
 
     function checkMark(bool) {
       return bool ? '✓' : '✗';
+    }
+
+    // Renders the trigger's structured factors as a checklist instead of
+    // only the prose explanation — "why" at a glance, not a sentence to parse.
+    function factorChecklist(factors) {
+      if (!factors) return '';
+      const rows = [
+        [`Rainfall`, factors.rainfallTriggered, `${factors.rainfallSignalMm?.toFixed?.(1) ?? factors.rainfallSignalMm}mm lagged signal`],
+        [`Standing water`, factors.standingWater, factors.standingWater ? 'present' : 'none reported'],
+        [`Case count spike`, factors.caseSpike, factors.caseSpike ? 'above rolling average' : 'within normal range'],
+        [`Community reports`, factors.communityReportsTriggered, `${factors.communityReportsConfirmed} CHW-confirmed`],
+      ];
+      return `
+        <div class="checkbox-row" style="flex-direction:column; align-items:flex-start; gap:0.35rem; margin-top:0.5rem;">
+          ${rows
+            .map(
+              ([label, hit, detail]) =>
+                `<div><b style="color:${hit ? 'var(--critical)' : 'var(--faint)'};">${checkMark(hit)}</b> ${label} — ${detail}</div>`,
+            )
+            .join('')}
+        </div>
+      `;
     }
 
     // Human-readable rationale for why routing picked this facility —
@@ -968,17 +1197,57 @@
       if (negatives.length) {
         text += ` Note: ${negatives.join(', ')} not confirmed.`;
       }
+      if (pl.overridden) {
+        text += ' (manually overridden)';
+      }
       return text;
+    }
+
+    function outcomeBadge(status) {
+      const s = (status || 'ongoing').toLowerCase();
+      const cls = s === 'recovered' ? 'badge-low' : s === 'referred' ? 'badge-medium' : 'badge-unknown';
+      return `<span class="badge ${cls}">${s}</span>`;
+    }
+
+    /** Records the treatment outcome for a placement — the "closing the loop" moment for link 9. */
+    async function setPlacementOutcome(placementId, status, patientId, backZoneId) {
+      try {
+        const res = await fetch(`/v1/routing/placements/${placementId}/outcome`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+        const text = await res.text();
+        const body = text ? JSON.parse(text) : undefined;
+        if (!res.ok) {
+          throw new Error(body?.message || `HTTP ${res.status}`);
+        }
+        showToast(`Outcome marked: ${status}.`, 'success');
+        await openPatientStatus(patientId, backZoneId);
+      } catch (err) {
+        showToast(`Could not update outcome: ${err.message || err}`, 'error');
+      }
     }
 
     async function doTransferRecord(patientId, placementId, backZoneId) {
       const el = document.getElementById('transfer-status');
+      const destinationFacilityId = document.getElementById('transfer-destination')?.value;
+      const originFacilityId = document.getElementById('transfer-origin')?.value;
+      if (!originFacilityId) {
+        showToast('Pick an origin facility before transferring.', 'error');
+        return;
+      }
       if (el) el.innerHTML = '<span class="spinner"></span><span class="run-status">Transferring…</span>';
       try {
-        const res = await fetch('/v1/demo/transfer-record', {
+        const res = await fetch('/v1/workflow/transfer-record', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ patientId, placementId }),
+          body: JSON.stringify({
+            patientId,
+            placementId,
+            originFacilityId,
+            destinationFacilityId,
+          }),
         });
         const text = await res.text();
         const body = text ? JSON.parse(text) : undefined;
@@ -999,7 +1268,7 @@
       switch (step) {
         case 0:
           return {
-            value: d.zone?.name ?? '—',
+            value: (d.zones || []).map((z) => z.name).join(' + ') || '—',
             sub: `<b>${d.facilities?.length ?? 0}</b> facilities · <b>${d.chws?.length ?? 0}</b> CHWs · <b>${d.patients?.length ?? 0}</b> patients registered`,
           };
         case 1:
@@ -1041,11 +1310,13 @@
             sub: `facility <b>${d.facilityId || '—'}</b>`,
           };
         case 8:
-          return { value: 'Not run', sub: d.message || '' };
-        case 9:
+          return { value: 'Available', sub: d.message || '' };
+        case 10:
           return {
-            value: `<code>${d.correlationId || ''}</code>`,
-            sub: 'shared across every step above — grep server logs to reconstruct the timeline',
+            value: d.monitoringStarted ? 'Started' : 'Pending',
+            sub: d.outcomeStatus
+              ? `${d.message || ''} Outcome: <b>${d.outcomeStatus}</b>.`
+              : d.message || '',
           };
         default:
           return { value: '—', sub: '' };
@@ -1118,11 +1389,11 @@
       }, 600);
     }
 
-    // --- Stage-by-stage demo runner: each stage is its own explicit action ---
-    let demoState = {};
+    // --- Stage-by-stage workflow runner: each stage is its own explicit action ---
+    let caseState = {};
     let collectedSteps = {};
 
-    const STAGE_BUTTON_INDEX = { registry: 0, alert: 1, campaign: 2, triage: 3, placement: 4 };
+    const STAGE_BUTTON_INDEX = { registry: 0, alert: 1, campaign: 2, triage: 3, placement: 4, monitoring: 5 };
 
     function stageButtons() {
       return document.querySelectorAll('.stage-btn:not(.reset-btn)');
@@ -1131,10 +1402,11 @@
     function updateButtonStates() {
       const buttons = stageButtons();
       buttons[STAGE_BUTTON_INDEX.registry].disabled = false;
-      buttons[STAGE_BUTTON_INDEX.alert].disabled = !demoState.zoneId;
-      buttons[STAGE_BUTTON_INDEX.campaign].disabled = !demoState.zoneId;
-      buttons[STAGE_BUTTON_INDEX.triage].disabled = !demoState.patientId;
-      buttons[STAGE_BUTTON_INDEX.placement].disabled = !demoState.patientId;
+      buttons[STAGE_BUTTON_INDEX.alert].disabled = !caseState.zoneId;
+      buttons[STAGE_BUTTON_INDEX.campaign].disabled = !caseState.zoneId;
+      buttons[STAGE_BUTTON_INDEX.triage].disabled = !caseState.patientId;
+      buttons[STAGE_BUTTON_INDEX.placement].disabled = !caseState.patientId;
+      buttons[STAGE_BUTTON_INDEX.monitoring].disabled = !caseState.facilityId || !caseState.patientId;
     }
 
     function mergeSteps(steps) {
@@ -1142,8 +1414,8 @@
       renderStageGrid(Object.values(collectedSteps));
     }
 
-    async function postDemo(path, body) {
-      const res = await fetch(`/v1/demo/${path}`, {
+    async function postWorkflow(path, body) {
+      const res = await fetch(`/v1/workflow/${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
@@ -1156,26 +1428,80 @@
       return parsed;
     }
 
+    // Event-level toasts, derived from each stage's actual response data —
+    // not a generic "stage complete," but what specifically just happened
+    // operationally, the way a real ops tool would surface it.
+    function toastForStageResult(name, steps) {
+      const byStep = new Map(steps.map((s) => [s.step, s.detail]));
+      switch (name) {
+        case 'registry': {
+          const d = byStep.get(0) || {};
+          const zoneNames = (d.zones || []).map((z) => z.name).join(', ');
+          showToast(`Registered ${d.patients?.length ?? 0} patient(s) across ${zoneNames}.`, 'success');
+          break;
+        }
+        case 'alert': {
+          const d = byStep.get(2)?.result || {};
+          showToast(
+            `Risk alert: ${(d.band || '').toUpperCase()} band${d.triggered ? ' — triggered' : ''}.`,
+            d.band === 'high' ? 'error' : 'success',
+          );
+          break;
+        }
+        case 'campaign': {
+          const d = byStep.get(4) || {};
+          showToast(`Campaign dispatched: ${d.sent ?? 0} sent, ${d.failed ?? 0} failed.`, d.failed ? 'error' : 'success');
+          break;
+        }
+        case 'triage': {
+          const d = byStep.get(5)?.decision || {};
+          showToast(
+            d.forcedBySafetyRule
+              ? `Triage: ${d.action} — forced by safety floor (${d.forcedBySafetyRule}).`
+              : `Triage decision: ${d.action}.`,
+            d.action === 'escalate' ? 'error' : 'success',
+          );
+          break;
+        }
+        case 'placement': {
+          const d = byStep.get(7) || {};
+          showToast(
+            d.bedConfirmed
+              ? `Placement confirmed — bed ${checkMark(d.bedConfirmed)} specialty ${checkMark(d.specialtyMatched)} road ${checkMark(d.roadAccessible)}.`
+              : 'Placement failed — no facility with capacity found.',
+            d.bedConfirmed ? 'success' : 'error',
+          );
+          break;
+        }
+        case 'monitoring': {
+          const d = byStep.get(10) || {};
+          showToast(d.monitoringStarted ? 'Monitoring started at receiving facility.' : 'Monitoring stage complete.', 'success');
+          break;
+        }
+      }
+    }
+
     const STAGE_STEPS = {
       registry: [0],
       alert: [1, 2],
       campaign: [3, 4],
       triage: [5, 6],
-      placement: [7, 8, 9],
+      placement: [7, 8],
+      monitoring: [10],
     };
 
-    async function runFullDemo() {
+    async function runFullWorkflow() {
       const button = document.getElementById('run-full-button');
       button.disabled = true;
       try {
         for (const name of ['registry', 'alert', 'campaign', 'triage', 'placement']) {
           const ok = await runStage(name);
           if (!ok) {
-            showToast(`Full demo stopped at "${name}" — see status above.`, 'error');
+            showToast(`Workflow stopped at "${name}" — see status above.`, 'error');
             return;
           }
         }
-        showToast('Full demo run complete.', 'success');
+        showToast('Workflow complete.', 'success');
       } finally {
         button.disabled = false;
       }
@@ -1195,43 +1521,62 @@
         let result;
         switch (name) {
           case 'registry':
-            result = await postDemo('seed-registry');
-            demoState = { ...demoState, ...result.ids, correlationId: result.correlationId };
-            correlationLabel.textContent = `correlationId: ${demoState.correlationId}`;
+            result = await postWorkflow('seed-registry');
+            caseState = { ...caseState, ...result.ids, correlationId: result.correlationId };
+            correlationLabel.textContent = `correlationId: ${caseState.correlationId}`;
             break;
           case 'alert':
-            result = await postDemo('trigger-alert', {
-              zoneId: demoState.zoneId,
-              correlationId: demoState.correlationId,
+            result = await postWorkflow('trigger-alert', {
+              zoneId: caseState.zoneId,
+              correlationId: caseState.correlationId,
             });
             break;
           case 'campaign':
-            result = await postDemo('dispatch-campaign', {
-              zoneId: demoState.zoneId,
-              correlationId: demoState.correlationId,
+            result = await postWorkflow('dispatch-campaign', {
+              zoneId: caseState.zoneId,
+              correlationId: caseState.correlationId,
             });
-            demoState = { ...demoState, ...result.ids };
-            lastCampaignId = demoState.campaignId;
+            caseState = { ...caseState, ...result.ids };
+            lastCampaignId = caseState.campaignId;
             break;
           case 'triage':
-            result = await postDemo('run-triage', {
-              patientId: demoState.patientId,
-              zoneId: demoState.zoneId,
-              correlationId: demoState.correlationId,
+            result = await postWorkflow('run-triage', {
+              patientId: caseState.patientId,
+              zoneId: caseState.zoneId,
+              correlationId: caseState.correlationId,
             });
             break;
           case 'placement':
-            result = await postDemo('place-facility', {
-              patientId: demoState.patientId,
-              zoneId: demoState.zoneId,
-              correlationId: demoState.correlationId,
+            result = await postWorkflow('place-facility', {
+              patientId: caseState.patientId,
+              zoneId: caseState.zoneId,
+              correlationId: caseState.correlationId,
             });
+            caseState = { ...caseState, ...result.ids };
             break;
+          case 'monitoring': {
+            result = await postWorkflow('monitor-patient', {
+              patientId: caseState.patientId,
+              facilityId: caseState.facilityId,
+              correlationId: caseState.correlationId,
+            });
+            // The outcome isn't part of monitor-patient's own response — it
+            // lives on the placement, set independently via the patient
+            // status view's "Mark recovered/referred" buttons. Pull the
+            // current value in so the stage card reflects it if already set.
+            const patientStatus = await safeJson(`/v1/registry/patients/${caseState.patientId}/status`);
+            const outcomeStatus = patientStatus?.latestPlacement?.outcomeStatus;
+            result.steps = result.steps.map((s) =>
+              s.step === 10 ? { ...s, detail: { ...s.detail, outcomeStatus } } : s,
+            );
+            break;
+          }
         }
         loadingStepNumbers = new Set();
         mergeSteps(result.steps);
         status.textContent = `${name} complete`;
         finishProgress(true);
+        toastForStageResult(name, result.steps);
         refreshAll();
         return true;
       } catch (err) {
@@ -1246,8 +1591,8 @@
       }
     }
 
-    function resetDemo() {
-      demoState = {};
+    function resetCase() {
+      caseState = {};
       collectedSteps = {};
       lastCampaignId = null;
       document.getElementById('run-status').textContent = '';
@@ -1265,7 +1610,7 @@
       status.innerHTML = '<span class="spinner"></span>Clearing all data…';
       startProgress();
       try {
-        const res = await fetch('/v1/demo/clear-data', { method: 'POST' });
+        const res = await fetch('/v1/workflow/clear-data', { method: 'POST' });
         const text = await res.text();
         const body = text ? JSON.parse(text) : undefined;
         if (!res.ok) {
@@ -1273,8 +1618,8 @@
         }
         finishProgress(true);
         status.textContent = 'All data cleared';
-        showToast('All demo data cleared.', 'success');
-        resetDemo();
+        showToast('All data cleared.', 'success');
+        resetCase();
       } catch (err) {
         finishProgress(false);
         status.textContent = `Clear failed: ${err.message || err}`;
@@ -1314,6 +1659,15 @@
       const localFacilities = latestState.facilities.filter((f) => f.zoneId === zoneId);
       const localChws = latestState.chws.filter((c) => c.catchmentZoneId === zoneId);
       const localPatients = latestState.patients.filter((p) => p.zoneId === zoneId);
+      const openEpisode = (latestState.alerts || []).find((a) => a.zoneId === zoneId && a.status === 'open');
+      const episodeBlock = openEpisode
+        ? `<div class="status-card">
+            🔴 Active since <b>${new Date(openEpisode.createdAt).toLocaleString()}</b> — ${localPatients.length} patient(s) in cohort
+            <div style="margin-top:0.5rem;">
+              <button class="run-button" style="margin-left:0; padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="resolveAlert('${openEpisode.id}'); closeModal();">Mark resolved</button>
+            </div>
+          </div>`
+        : `<div class="status-card">✅ No active risk episode for this zone.</div>`;
 
       const chwName = (chwId) =>
         latestState.chws.find((c) => c.id === chwId)?.name || '—';
@@ -1322,14 +1676,14 @@
         ? localFacilities
             .map((f) => {
               const specialties = (f.specialties || []).map((s) => s.code || s).join(', ') || '—';
-              return `<tr><td>${f.name}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${specialties}</td></tr>`;
+              return `<tr class="clickable" onclick="openFacilityDetail('${f.id}')"><td>${f.name}</td><td>${f.bedsAvailable}/${f.bedsTotal}</td><td>${specialties}</td></tr>`;
             })
             .join('')
         : `<tr><td colspan="3" class="empty">No facilities in this zone.</td></tr>`;
 
       const chwRows = localChws.length
         ? localChws
-            .map((c) => `<tr><td>${c.name}</td><td>${c.phone}</td><td>${(c.languages || []).join(', ')}</td></tr>`)
+            .map((c) => `<tr class="clickable" onclick="openChwDetail('${c.id}', '${zoneId}')"><td>${c.name}</td><td>${c.phone}</td><td>${(c.languages || []).join(', ')}</td></tr>`)
             .join('')
         : `<tr><td colspan="3" class="empty">No CHWs assigned to this zone.</td></tr>`;
 
@@ -1348,19 +1702,24 @@
 
       const reportRows = communityReports.length
         ? communityReports
-            .map(
-              (r) => `
+            .map((r) => {
+              const canVerify = r.verificationStatus === 'unverified' && localChws.length;
+              const action = canVerify
+                ? `<button class="run-button" style="margin-left:0; padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="verifyCommunityReport('${r.id}', '${zoneId}', '${localChws[0].id}')">Verify (as ${localChws[0].name})</button>`
+                : '—';
+              return `
         <tr>
           <td>${r.reportType}</td>
           <td>${r.severity || '—'}</td>
           <td>${r.verificationStatus}</td>
           <td>${r.freeText || '—'}</td>
-        </tr>`,
-            )
+          <td>${action}</td>
+        </tr>`;
+            })
             .join('')
-        : `<tr><td colspan="4" class="empty">No community reports for this zone.</td></tr>`;
+        : `<tr><td colspan="5" class="empty">No community reports for this zone.</td></tr>`;
 
-      const isActive = demoState.zoneId === zoneId;
+      const isActive = caseState.zoneId === zoneId;
       showModal(`
         <div class="modal-head">
           <div>
@@ -1370,15 +1729,17 @@
           <button class="modal-close" onclick="closeModal()">✕</button>
         </div>
 
-        <button class="run-button" style="margin-left:0; margin-bottom:1rem;" ${isActive ? 'disabled' : ''} onclick="useZoneForDemo('${zoneId}')">
-          ${isActive ? 'Active demo zone' : 'Use this zone for demo stages 2-3'}
+        <button class="run-button" style="margin-left:0; margin-bottom:1rem;" ${isActive ? 'disabled' : ''} onclick="useZoneForCase('${zoneId}')">
+          ${isActive ? 'Active zone for this case' : 'Use this zone for the risk alert & dispatch stages'}
         </button>
 
         <div class="detail-section">
           <h3>Risk</h3>
           <div class="status-card">
             ${bandBadge(trigger?.band)} ${trigger?.explanation || 'No trigger evaluated yet for this zone.'}
+            ${factorChecklist(trigger?.factors)}
           </div>
+          ${episodeBlock}
         </div>
 
         <div class="detail-section">
@@ -1398,11 +1759,31 @@
 
         <div class="detail-section">
           <h3>Community reports (${communityReports.length})</h3>
-          <table><thead><tr><th>Type</th><th>Severity</th><th>Status</th><th>Notes</th></tr></thead><tbody>${reportRows}</tbody></table>
+          <table><thead><tr><th>Type</th><th>Severity</th><th>Status</th><th>Notes</th><th></th></tr></thead><tbody>${reportRows}</tbody></table>
+
+          <form style="margin-top:0.75rem;" onsubmit="submitCommunityReport(event, '${zoneId}')">
+            <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
+              <label>Type<select name="reportType">
+                <option value="flooding">Flooding</option>
+                <option value="standing_water">Standing water</option>
+                <option value="impassable_road">Impassable road</option>
+                <option value="contaminated_water">Contaminated water</option>
+                <option value="illness_cluster">Illness cluster</option>
+              </select></label>
+              <label>Severity<select name="severity">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select></label>
+              <label>Notes<input name="freeText" placeholder="optional details" /></label>
+            </div>
+            <button class="run-button" style="margin-left:0;" type="submit">Submit community report</button>
+            <span style="font-size:0.72rem; color:var(--faint); margin-left:0.5rem;">CHW-confirmed reports factor into the risk trigger — see the Risk section above.</span>
+          </form>
         </div>
 
         ${
-          demoState.correlationId
+          caseState.correlationId
             ? `<div class="detail-section">
                 <h3>Telemetry</h3>
                 <button class="run-button" style="margin-left:0;" onclick="closeModal(); openTelemetryTimeline();">View this journey's timeline</button>
@@ -1412,19 +1793,62 @@
       `);
     }
 
+    async function submitCommunityReport(event, zoneId) {
+      event.preventDefault();
+      const form = event.target;
+      const body = {
+        zoneId,
+        reportType: form.reportType.value,
+        severity: form.severity.value,
+        freeText: form.freeText.value || undefined,
+        intakeChannel: 'hotline-admin',
+      };
+      try {
+        const res = await fetch('/v1/community-reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : undefined;
+        if (!res.ok) throw new Error(parsed?.message || `HTTP ${res.status}`);
+        showToast('Community report submitted — unverified until a CHW confirms it.', 'success');
+        openZoneDetail(zoneId);
+      } catch (err) {
+        showToast(`Failed to submit report: ${err.message || err}`, 'error');
+      }
+    }
+
+    async function verifyCommunityReport(reportId, zoneId, chwId) {
+      try {
+        const res = await fetch(`/v1/community-reports/${reportId}/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verifiedByChwId: chwId, outcome: 'chw-confirmed' }),
+        });
+        const text = await res.text();
+        const parsed = text ? JSON.parse(text) : undefined;
+        if (!res.ok) throw new Error(parsed?.message || `HTTP ${res.status}`);
+        showToast('Report confirmed — it now factors into this zone\'s risk trigger.', 'success');
+        openZoneDetail(zoneId);
+      } catch (err) {
+        showToast(`Failed to verify report: ${err.message || err}`, 'error');
+      }
+    }
+
     async function openTelemetryTimeline() {
-      if (!demoState.correlationId) {
+      if (!caseState.correlationId) {
         showModal(`
           <div class="modal-head">
             <div class="modal-title">Telemetry timeline</div>
             <button class="modal-close" onclick="closeModal()">✕</button>
           </div>
-          <div class="empty">No active demo journey yet — run "Seed registry" or pick an existing zone/patient first.</div>
+          <div class="empty">No active case yet — run "Registry" or pick an existing zone/patient first.</div>
         `);
         return;
       }
 
-      const events = (await safeJson(`/v1/telemetry/timeline/${demoState.correlationId}`)) || [];
+      const events = (await safeJson(`/v1/telemetry/timeline/${caseState.correlationId}`)) || [];
 
       const rows = events.length
         ? events
@@ -1447,13 +1871,13 @@
                 </div>`;
             })
             .join('')
-        : `<div class="empty">No telemetry events yet for correlationId ${demoState.correlationId} — TELEMETRY_MODE must be "memory" for this to populate (it's the default in this compose file).</div>`;
+        : `<div class="empty">No telemetry events yet for correlationId ${caseState.correlationId} — TELEMETRY_MODE must be "memory" for this to populate (it's the default in this compose file).</div>`;
 
       showModal(`
         <div class="modal-head">
           <div>
             <div class="modal-title">Telemetry timeline</div>
-            <div class="run-status"><code>${demoState.correlationId}</code></div>
+            <div class="run-status"><code>${caseState.correlationId}</code></div>
           </div>
           <button class="modal-close" onclick="closeModal()">✕</button>
         </div>
@@ -1504,18 +1928,48 @@
           </div>`
         : `<div class="empty">No escalation raised.</div>`;
 
+      const facilityOptions = (facilityId) =>
+        (latestState.facilities || [])
+          .map((f) => `<option value="${f.id}" ${f.id === facilityId ? 'selected' : ''}>${f.name}</option>`)
+          .join('');
+
       const placementBlock = pl
         ? `<div class="status-card">
             facility: <b>${pl.facility?.name || pl.facilityId}</b><br/>
-            ${placementReason(pl)}
+            ${placementReason(pl)}<br/>
+            <div style="margin-top:0.5rem;">
+              outcome: ${outcomeBadge(pl.outcomeStatus)}
+              ${
+                pl.outcomeStatus !== 'recovered' && pl.outcomeStatus !== 'referred'
+                  ? `<button class="run-button" style="margin-left:0.5rem; padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="setPlacementOutcome('${pl.id}', 'recovered', '${patientId}', ${backZoneId ? `'${backZoneId}'` : 'null'})">Mark recovered</button>
+                     <button class="run-button" style="margin-left:0.3rem; padding:0.2rem 0.5rem; font-size:0.7rem;" onclick="setPlacementOutcome('${pl.id}', 'referred', '${patientId}', ${backZoneId ? `'${backZoneId}'` : 'null'})">Mark referred</button>`
+                  : ''
+              }
+            </div>
           </div>`
         : `<div class="empty">No facility placement yet.</div>`;
+
+      const originSelectOrHidden = p.homeFacilityId
+        ? `<input type="hidden" id="transfer-origin" value="${p.homeFacilityId}" />
+           <div style="font-size:0.8rem; color:var(--faint); margin-top:0.35rem;">Origin: <b>${p.homeFacility?.name || p.homeFacilityId}</b></div>`
+        : `<label style="display:block; margin-top:0.5rem; font-size:0.8rem;">Origin facility (required — none on record)
+             <select id="transfer-origin" style="display:block; width:100%; margin-top:0.25rem;">
+               <option value="">Select origin…</option>
+               ${facilityOptions(null)}
+             </select>
+           </label>`;
 
       const transferBlock = pl
         ? pl.recordTransferredAt
           ? `<div class="status-card">transferred at <b>${new Date(pl.recordTransferredAt).toLocaleString()}</b></div>`
           : `<div class="status-card">
               not yet transferred
+              <label style="display:block; margin-top:0.5rem; font-size:0.8rem;">Destination facility
+                <select id="transfer-destination" style="display:block; width:100%; margin-top:0.25rem;">
+                  ${facilityOptions(pl.facilityId)}
+                </select>
+              </label>
+              ${originSelectOrHidden}
               <div id="transfer-status" style="margin-top:0.5rem;">
                 <button class="run-button" style="margin-left:0;" onclick="doTransferRecord('${patientId}', '${pl.id}', ${backZoneId ? `'${backZoneId}'` : 'null'})">Transfer record to facility</button>
               </div>
@@ -1531,7 +1985,7 @@
             .join('')
         : `<tr><td colspan="4" class="empty">No messages sent to this patient.</td></tr>`;
 
-      const isActivePatient = demoState.patientId === patientId;
+      const isActivePatient = caseState.patientId === patientId;
       showModal(`
         ${backLink}
         <div class="modal-head">
@@ -1542,13 +1996,14 @@
           <button class="modal-close" onclick="closeModal()">✕</button>
         </div>
 
-        <button class="run-button" style="margin-left:0; margin-bottom:1rem;" ${isActivePatient ? 'disabled' : ''} onclick="usePatientForDemo('${patientId}', ${backZoneId ? `'${backZoneId}'` : 'null'})">
-          ${isActivePatient ? 'Active demo patient' : 'Use this patient for demo stages 4-5'}
+        <button class="run-button" style="margin-left:0; margin-bottom:1rem;" ${isActivePatient ? 'disabled' : ''} onclick="usePatientForCase('${patientId}', ${backZoneId ? `'${backZoneId}'` : 'null'})">
+          ${isActivePatient ? 'Active patient for this case' : 'Use this patient for triage & placement'}
         </button>
 
         <div class="detail-section">
           <h3>Registry</h3>
           ${statusLine('Zone', p.zone?.name || '—')}
+          ${statusLine('Home facility', p.homeFacility?.name || 'not on record')}
           ${statusLine('Assigned CHW', p.assignedChw ? `${p.assignedChw.name} (${p.assignedChw.phone})` : '—')}
           ${statusLine('Language', p.language)}
           <div class="cohort-tags">${cohortTags(p)}</div>
@@ -1583,7 +2038,7 @@
 
     renderStageGrid(null);
     updateButtonStates();
-    refreshAll().then(hydrateDemoState);
+    refreshAll().then(hydrateCaseState);
     setInterval(refreshAll, 10000);
   </script>
 </body>
